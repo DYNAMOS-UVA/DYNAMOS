@@ -131,6 +131,8 @@ Linkerd is a service mesh for Kubernetes, we use it to install Jaeger (https://w
 ```bash
 # Install CLI
 curl --proto '=https' --tlsv1.2 -sSfL https://run.linkerd.io/install-edge | sh
+# To specify version run this instead: 
+# curl --proto '=https' --tlsv1.2 -sSfL https://run.linkerd.io/install-edge | LINKERD2_VERSION=edge-25.8.1 sh
 
 # Add Linkerd to PATH
 export PATH=$HOME/.linkerd2/bin:$PATH
