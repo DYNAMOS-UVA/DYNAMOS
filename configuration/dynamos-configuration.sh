@@ -2,9 +2,16 @@
 
 set -e
 
-# Change this to the path of the DYNAMOS repository on your disk
+# DYNAMOS_ROOT      – path to the repo inside the current shell (charts, config).
+#                    Defaults to /workspace (the dev-container mount point).
+# DYNAMOS_HOST_ROOT – path to the repo as seen by the Kubernetes node (host
+#                    machine). Only differs from DYNAMOS_ROOT when running from
+#                    inside the dev container. Set this to the repo path on your
+#                    host before running, e.g.:
+#   export DYNAMOS_HOST_ROOT=/home/youruser/Development/Go/DYNAMOS
 echo "Setting up paths..."
-DYNAMOS_ROOT="${HOME}/DYNAMOS"
+DYNAMOS_ROOT="${DYNAMOS_ROOT:-/workspace}"
+DYNAMOS_HOST_ROOT="${DYNAMOS_HOST_ROOT:-${DYNAMOS_ROOT}}"
 
 # Charts
 charts_path="${DYNAMOS_ROOT}/charts"
@@ -37,7 +44,6 @@ actual_hash=$(echo "$hashed_pw" | cut -d $'\n' -f2)
 echo "Replacing tokens..."
 cp ${k8s_service_files}/definitions_example.json ${rabbit_definitions_file}
 
-
 # The Rabbit Hashed password needs to be in definitions.json file, that is the configuration for RabbitMQ
 if [[ "$OSTYPE" == "darwin"* ]]; then
     # macOS sed
@@ -67,10 +73,28 @@ helm repo update
 helm upgrade -i -f "${core_chart}/prometheus-values.yaml" prometheus prometheus-community/prometheus
 
 echo "Installing NGINX..."
-helm install -f "${core_chart}/ingress-values.yaml" nginx oci://ghcr.io/nginxinc/charts/nginx-ingress -n ingress --version 0.18.0
+helm upgrade -i -f "${core_chart}/ingress-values.yaml" nginx oci://ghcr.io/nginxinc/charts/nginx-ingress -n ingress --version 0.18.0
+
+echo "Installing Gateway API CRDs (required by Linkerd)..."
+kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
+
+if kubectl get namespace linkerd &>/dev/null; then
+    echo "Linkerd already installed — upgrading..."
+    linkerd upgrade --crds | kubectl apply -f -
+    linkerd upgrade --set proxyInit.runAsRoot=true | kubectl apply -f -
+else
+    echo "Installing Linkerd CRDs..."
+    linkerd install --crds | kubectl apply -f -
+    echo "Installing Linkerd control plane..."
+    linkerd install --set proxyInit.runAsRoot=true | kubectl apply -f -
+fi
+linkerd check
+
+echo "Installing/upgrading Linkerd Jaeger..."
+linkerd jaeger install | kubectl apply -f -
 
 echo "Installing DYNAMOS core..."
-helm upgrade -i -f ${core_chart}/values.yaml core ${core_chart} --set hostPath=${HOME}
+helm upgrade -i -f ${core_chart}/values.yaml core ${core_chart} --set hostPath=${DYNAMOS_HOST_ROOT}
 
 sleep 3
 # Install orchestrator layer
