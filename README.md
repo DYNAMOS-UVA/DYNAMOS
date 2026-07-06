@@ -43,31 +43,34 @@ The Fabric-CloudLab profile can be cloned and adapted from the [dynamos-cluster]
 
 Instead of installing all dependencies locally you can use the provided dev container, which bundles Go, protoc, Node.js, kubectl, Helm, Linkerd, k9s, and etcdctl.
 
-**Requirements on the host:** Docker and a running `kind` cluster (or any kubeconfig cluster).
+**Requirements on the host:** Docker only. The configuration script creates the `kind` cluster automatically if none exists.
 
 ### First-time setup
 
 ```bash
-# 1. Copy the environment file and fill in your host repo path
+# 1. Copy the environment file and set your host repo path
 cp .env.example .env
-# Edit .env and set DYNAMOS_HOST_ROOT to the absolute path of this repo on your machine
+# Edit DYNAMOS_HOST_ROOT to the absolute path of this repo on your machine
 
 # 2. Build the image and open a shell (takes ~3 min on first run)
 ./dev.sh
 
 # 3. Inside the container: deploy DYNAMOS to your cluster
-export DYNAMOS_HOST_ROOT=<same value as in .env>
+#    DYNAMOS_HOST_ROOT is forwarded automatically from .env
 ./configuration/dynamos-configuration.sh
 ```
 
 ### Daily use
 
 ```bash
-# Skip the image rebuild if nothing changed in .devcontainer/Dockerfile
+# On the host — skip rebuild if Dockerfile hasn't changed
 ./dev.sh --no-rebuild
+
+# Inside the container — start all required port-forwards (auto-restarts on pod churn)
+./pf.sh
 ```
 
-The container mounts the project at `/workspace`, your `~/.kube` (read-only), and the Docker socket. It runs with `--network host` so `kubectl port-forward` bindings are accessible from the host browser.
+The container mounts the project at `/workspace`, your `~/.kube` (read-only), and the Docker socket. It runs with `--network host` so `kubectl port-forward` bindings are accessible from the host browser. `DYNAMOS_HOST_ROOT` is read from `.env` and injected into the container automatically.
 
 # Installation Guide
 

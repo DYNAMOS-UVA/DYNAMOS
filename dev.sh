@@ -31,5 +31,6 @@ docker run -it --rm \
     -v "${SCRIPT_DIR}:/workspace" \
     -v "${HOME}/.kube:/root/.kube:ro" \
     -v "/var/run/docker.sock:/var/run/docker.sock" \
+    -e "DYNAMOS_HOST_ROOT=${DYNAMOS_HOST_ROOT:-}" \
     -w /workspace \
     "${IMAGE}" bash
