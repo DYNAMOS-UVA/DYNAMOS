@@ -13,6 +13,7 @@ The Fabric-CloudLab profile can be cloned and adapted from the [dynamos-cluster]
 
 - [DYNAMOS](#dynamos)
 - [Table of Contents](#table-of-contents)
+- [Dev Container (recommended)](#dev-container-recommended)
 - [Installation Guide](#installation-guide)
 - [Prerequisite software tools](#prerequisite-software-tools)
   - [1. WSL2 (for Windows)](#1-wsl2-for-windows)
@@ -37,6 +38,36 @@ The Fabric-CloudLab profile can be cloned and adapted from the [dynamos-cluster]
 - [Troubleshooting](#troubleshooting)
   - [14. Services crash because the connection to RabbitMQ does not work](#14-services-crash-because-the-connection-to-rabbitmq-does-not-work)
 
+
+# Dev Container (recommended)
+
+Instead of installing all dependencies locally you can use the provided dev container, which bundles Go, protoc, Node.js, kubectl, Helm, Linkerd, k9s, and etcdctl.
+
+**Requirements on the host:** Docker and a running `kind` cluster (or any kubeconfig cluster).
+
+### First-time setup
+
+```bash
+# 1. Copy the environment file and fill in your host repo path
+cp .env.example .env
+# Edit .env and set DYNAMOS_HOST_ROOT to the absolute path of this repo on your machine
+
+# 2. Build the image and open a shell (takes ~3 min on first run)
+./dev.sh
+
+# 3. Inside the container: deploy DYNAMOS to your cluster
+export DYNAMOS_HOST_ROOT=<same value as in .env>
+./configuration/dynamos-configuration.sh
+```
+
+### Daily use
+
+```bash
+# Skip the image rebuild if nothing changed in .devcontainer/Dockerfile
+./dev.sh --no-rebuild
+```
+
+The container mounts the project at `/workspace`, your `~/.kube` (read-only), and the Docker socket. It runs with `--network host` so `kubectl port-forward` bindings are accessible from the host browser.
 
 # Installation Guide
 
