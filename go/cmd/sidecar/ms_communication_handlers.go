@@ -20,7 +20,7 @@ import (
 	"context"
 	"time"
 
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"go.opencensus.io/trace"
 	"google.golang.org/protobuf/proto"

@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 	"github.com/stretchr/testify/assert"
 	mvccpb "go.etcd.io/etcd/api/v3/mvccpb"
 	clientv3 "go.etcd.io/etcd/client/v3"
