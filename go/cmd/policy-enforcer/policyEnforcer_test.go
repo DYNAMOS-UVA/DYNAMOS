@@ -3,8 +3,8 @@ package main
 // import (
 // 	"testing"
 
-// 	"github.com/DYNAMOS-UVA/DYNAMOS/go/pkg/lib"
-// 	pb "github.com/DYNAMOS-UVA/DYNAMOS/go/pkg/proto"
+// 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
+// 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 // 	"github.com/stretchr/testify/assert"
 // 	// Import your pb and lib packages here
 // )

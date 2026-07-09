@@ -75,9 +75,9 @@ import (
 	"context"
 	"os"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
-	"github.com/Jorrit05/DYNAMOS/pkg/msinit"
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/msinit"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 )
 
 var (
