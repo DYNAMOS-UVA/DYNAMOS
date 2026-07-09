@@ -13,6 +13,7 @@ The Fabric-CloudLab profile can be cloned and adapted from the [dynamos-cluster]
 
 - [DYNAMOS](#dynamos)
 - [Table of Contents](#table-of-contents)
+- [Dev Container (recommended)](#dev-container-recommended)
 - [Installation Guide](#installation-guide)
 - [Prerequisite software tools](#prerequisite-software-tools)
   - [1. WSL2 (for Windows)](#1-wsl2-for-windows)
@@ -37,6 +38,41 @@ The Fabric-CloudLab profile can be cloned and adapted from the [dynamos-cluster]
 - [Troubleshooting](#troubleshooting)
   - [14. Services crash because the connection to RabbitMQ does not work](#14-services-crash-because-the-connection-to-rabbitmq-does-not-work)
 
+
+# Dev Container (recommended)
+
+Instead of installing all dependencies locally you can use the provided dev container, which bundles Go, protoc, Node.js, kubectl, Helm, Linkerd, k9s, and etcdctl.
+
+**Requirements on the host:** Docker only. The configuration script creates the `kind` cluster automatically if none exists.
+
+### First-time setup
+
+```bash
+# 1. Copy the environment file and set your host repo path
+cp .env.example .env
+# Edit DYNAMOS_HOST_ROOT to the absolute path of this repo on your machine
+
+# 2. Build the image and open a shell (takes ~3 min on first run)
+./dev.sh
+
+# 3. Inside the container: deploy DYNAMOS to your cluster
+#    DYNAMOS_HOST_ROOT is forwarded automatically from .env
+./configuration/dynamos-configuration.sh
+```
+
+### Daily use
+
+```bash
+# On the host — skip rebuild if Dockerfile hasn't changed
+./dev.sh --no-rebuild
+
+# Inside the container — start all required port-forwards (auto-restarts on pod churn)
+./pf.sh
+```
+
+The container mounts the project at `/workspace`, your `~/.kube` (read-only), and the Docker socket. It runs with `--network host` so `kubectl port-forward` bindings are accessible from the host browser. `DYNAMOS_HOST_ROOT` is read from `.env` and injected into the container automatically.
+
+Once `pf.sh` is running, the API gateway is reachable from the **host** at `api-gateway.api-gateway.svc.cluster.local:80` — but only after you add the one-time hostfile entry from [11.1. Update hostfile](#111-update-hostfile) (this is a host-side edit, not something the container can do for you since `/etc/hosts` isn't shared even with `--network host`). Then see [13. Example Request](#13-example-request) to send a test request.
 
 # Installation Guide
 

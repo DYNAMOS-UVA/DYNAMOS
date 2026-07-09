@@ -32,6 +32,7 @@ definitions.bak
 go.work
 __debug_bin
 node_modules
+.env
 .env.local
 datasets/*.csv
 
