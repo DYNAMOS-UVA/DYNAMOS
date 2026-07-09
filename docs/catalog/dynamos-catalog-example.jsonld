@@ -1,0 +1,80 @@
+{
+  "@context": [
+    "https://w3id.org/dspace/2025/1/context.jsonld",
+    {
+      "dynamos": "https://dynamos.example/vocab#"
+    }
+  ],
+  "@id": "urn:dynamos:catalog:VU:for-jorrit.stutterheim",
+  "@type": "Catalog",
+  "participantId": "urn:dynamos:party:VU",
+  "service": [
+    {
+      "@id": "urn:dynamos:service:vu-agent",
+      "@type": "DataService",
+      "endpointURL": "https://vu-agent.vu.svc.cluster.local/agent/v1/sqlDataRequest/vu-agent"
+    }
+  ],
+  "dataset": [
+    {
+      "@id": "urn:dynamos:dataset:VU:wageGap",
+      "@type": "Dataset",
+      "hasPolicy": [
+        {
+          "@id": "urn:dynamos:offer:VU:GUID",
+          "@type": "Offer",
+          "assigner": "urn:dynamos:party:VU",
+          "assignee": "mailto:jorrit.stutterheim@cloudnation.nl",
+          "permission": [
+            {
+              "action": "dynamos:sqlDataRequest",
+              "constraint": [
+                {
+                  "leftOperand": "dynamos:archetype",
+                  "operator": "isAnyOf",
+                  "rightOperand": ["computeToData", "dataThroughTtp"]
+                },
+                {
+                  "leftOperand": "dynamos:computeProvider",
+                  "operator": "isAnyOf",
+                  "rightOperand": ["SURF"]
+                }
+              ]
+            },
+            {
+              "action": "dynamos:genericRequest",
+              "constraint": [
+                {
+                  "leftOperand": "dynamos:archetype",
+                  "operator": "isAnyOf",
+                  "rightOperand": ["computeToData", "dataThroughTtp"]
+                },
+                {
+                  "leftOperand": "dynamos:computeProvider",
+                  "operator": "isAnyOf",
+                  "rightOperand": ["SURF"]
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "distribution": [
+        {
+          "@type": "Distribution",
+          "format": "dynamos:sqlDataRequest",
+          "accessService": "urn:dynamos:service:vu-agent",
+          "dynamos:table": "Aanstellingen",
+          "dynamos:delimiter": ";"
+        },
+        {
+          "@type": "Distribution",
+          "format": "dynamos:sqlDataRequest",
+          "accessService": "urn:dynamos:service:vu-agent",
+          "dynamos:table": "Personen",
+          "dynamos:delimiter": ";"
+        }
+      ]
+    }
+  ]
+}
