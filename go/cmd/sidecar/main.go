@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	"go.opencensus.io/plugin/ocgrpc"
 
 	"google.golang.org/grpc"

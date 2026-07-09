@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"contrib.go.opencensus.io/exporter/ocagent"
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 )

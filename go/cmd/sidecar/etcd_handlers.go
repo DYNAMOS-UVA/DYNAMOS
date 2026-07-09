@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/protobuf/types/known/emptypb"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/etcd"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
 )
 
 var (

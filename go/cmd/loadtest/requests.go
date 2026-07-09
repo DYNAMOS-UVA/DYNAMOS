@@ -11,7 +11,7 @@ import (
 
 	progress "github.com/cheggaaa/pb/v3"
 
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	vegeta "github.com/tsenart/vegeta/v12/lib"
 )
 

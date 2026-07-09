@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/etcd"
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
-	"github.com/Jorrit05/DYNAMOS/pkg/mschain"
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/mschain"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.opencensus.io/trace"
 )

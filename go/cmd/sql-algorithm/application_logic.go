@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strconv"
 
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 
 	"github.com/gogo/protobuf/jsonpb"
 	"go.opencensus.io/trace"

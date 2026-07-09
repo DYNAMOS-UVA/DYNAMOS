@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/etcd"
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 )
 
 func getJobName(user string) (string, error) {
