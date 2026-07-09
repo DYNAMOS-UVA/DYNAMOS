@@ -72,6 +72,8 @@ cp .env.example .env
 
 The container mounts the project at `/workspace`, your `~/.kube` (read-only), and the Docker socket. It runs with `--network host` so `kubectl port-forward` bindings are accessible from the host browser. `DYNAMOS_HOST_ROOT` is read from `.env` and injected into the container automatically.
 
+Once `pf.sh` is running, the API gateway is reachable from the **host** at `api-gateway.api-gateway.svc.cluster.local:80` — but only after you add the one-time hostfile entry from [11.1. Update hostfile](#111-update-hostfile) (this is a host-side edit, not something the container can do for you since `/etc/hosts` isn't shared even with `--network host`). Then see [13. Example Request](#13-example-request) to send a test request.
+
 # Installation Guide
 
 This document provides guidelines to installing all dependencies of DYNAMOS.
