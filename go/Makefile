@@ -6,6 +6,8 @@ branch_name := $(shell git rev-parse --abbrev-ref HEAD | sed 's#/#-#g')
 sql_microservices := sql-algorithm sql-anonymize sql-aggregate sql-test
 # List of DYNAMOS core services
 dynamos := sidecar policy-enforcer orchestrator agent api-gateway
+# DSP-facing connector services (standalone, not microservice-chain participants)
+dsp_connector := dsp-connector
 # Docker Hub account for tagging and pushing images
 dockerhub_account := dynamos1
 
@@ -71,14 +73,19 @@ $(dynamos): prepare proto
 $(sql_microservices): prepare proto
 	$(call build_and_push)
 
+# Same as above, but for the DSP connector services
+$(dsp_connector): prepare
+	$(call build_and_push)
+
 # Build and push all services
-all: $(dynamos) $(sql_microservices)
+all: $(dynamos) $(sql_microservices) $(dsp_connector)
 # Convenience aliases to build specific groups of services
 dynamos: $(dynamos)
 sql_microservices: $(sql_microservices)
+dsp_connector: $(dsp_connector)
 
 # Declare targets that are not associated with (physical) files.
 # This prevents make from being misled by a file or directory that has the same name as the target.
 # For example, if a file named "prepare" or "proto" exists, make might think it doesn't need to run the commands again.
 # By declaring them .PHONY, make will always execute the associated commands when these targets are invoked.
-.PHONY: all prepare proto $(dynamos) $(sql_microservices)
+.PHONY: all prepare proto $(dynamos) $(sql_microservices) $(dsp_connector)
