@@ -12,9 +12,9 @@ var (
 	logger = lib.InitLogger(logLevel)
 
 	// catalogConfig is loaded once at startup (see loadCatalogConfig below) and
-	// will be consumed by the POST /catalog/request handler added in issue #10.
-	// Kept as a package-level var, not a local in main(), so that handler can
-	// reach it without main() having to wire it through by hand.
+	// consumed by catalogRequestHandler (catalog_handler.go, issue #10). Kept
+	// as a package-level var, not a local in main(), so the handler can reach
+	// it without main() having to wire it through by hand.
 	catalogConfig *catalog.Config
 )
 
@@ -44,8 +44,13 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
+	// DSP HTTPS binding fixes /catalog/request relative to whatever <base>
+	// URL DYNAMOS publishes for this service - folding apiVersion into that
+	// base keeps this on the internal /api/v1 convention without deviating
+	// from the spec (see the comment on apiVersion in config_local.go).
+	mux.HandleFunc(apiVersion+"/catalog/request", catalogRequestHandler)
 
-	logger.Sugar().Infow("Starting dsp-connector http server", "port", port)
+	logger.Sugar().Infow("Starting dsp-connector http server", "port", port, "apiVersion", apiVersion)
 	if err := http.ListenAndServe(port, mux); err != nil {
 		logger.Sugar().Fatalf("Error starting HTTP server: %v", err)
 	}
