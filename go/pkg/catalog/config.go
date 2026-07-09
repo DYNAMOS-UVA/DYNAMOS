@@ -42,7 +42,10 @@ type RelationConfig struct {
 	AllowedComputeProviders []string `json:"allowedComputeProviders"`
 }
 
-// LoadConfig reads and parses a catalog config file from disk.
+// LoadConfig reads, parses, and validates a catalog config file from disk.
+// Validation catches referential errors (e.g. a Relation pointing at a
+// dataset name that doesn't exist) at load time rather than leaving them to
+// surface later inside BuildCatalog on the first matching request.
 func LoadConfig(path string) (*Config, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -54,5 +57,44 @@ func LoadConfig(path string) (*Config, error) {
 		return nil, fmt.Errorf("parsing catalog config %q: %w", path, err)
 	}
 
+	if err := cfg.Validate(); err != nil {
+		return nil, fmt.Errorf("validating catalog config %q: %w", path, err)
+	}
+
 	return &cfg, nil
+}
+
+// Validate checks referential integrity between Relations and Datasets: every
+// name in a Relation's DataSets must correspond to an actual DatasetConfig.
+// Basic required fields (Party, AgentEndpoint) are also checked so a
+// half-filled-in config fails at load time, not wherever it's later found to
+// be missing something.
+func (cfg *Config) Validate() error {
+	if cfg.Party == "" {
+		return fmt.Errorf("config is missing required field: party")
+	}
+	if cfg.AgentEndpoint == "" {
+		return fmt.Errorf("config is missing required field: agentEndpoint")
+	}
+
+	known := make(map[string]bool, len(cfg.Datasets))
+	for _, d := range cfg.Datasets {
+		if d.Name == "" {
+			return fmt.Errorf("dataset entry is missing required field: name")
+		}
+		known[d.Name] = true
+	}
+
+	for participant, rel := range cfg.Relations {
+		if len(rel.DataSets) == 0 {
+			return fmt.Errorf("relation %q for participant %q has no dataSets", rel.ID, participant)
+		}
+		for _, dsName := range rel.DataSets {
+			if !known[dsName] {
+				return fmt.Errorf("relation %q for participant %q references unknown dataset %q", rel.ID, participant, dsName)
+			}
+		}
+	}
+
+	return nil
 }
