@@ -8,3 +8,4 @@ import "go.uber.org/zap"
 var serviceName = "dsp-connector"
 var logLevel = zap.DebugLevel
 var port = ":8090"
+var catalogConfigPath = "./config/example-catalog.json"

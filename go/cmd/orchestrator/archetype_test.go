@@ -5,8 +5,8 @@ package main
 // 	"fmt"
 // 	"testing"
 
-// 	"github.com/Jorrit05/DYNAMOS/pkg/lib"
-// 	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+// 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
+// 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 // 	clientv3 "go.etcd.io/etcd/client/v3"
 // 	"go.etcd.io/etcd/mvcc/mvccpb"
 

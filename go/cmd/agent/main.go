@@ -9,9 +9,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/api"
-	"github.com/Jorrit05/DYNAMOS/pkg/etcd"
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 	"github.com/gorilla/handlers"
 	"go.opencensus.io/plugin/ochttp"
 	batchv1 "k8s.io/api/batch/v1"
@@ -19,7 +19,7 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"google.golang.org/grpc"
 
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 )
 
 var (

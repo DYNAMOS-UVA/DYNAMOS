@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 )
 
 // This function handles incoming messages from the sidecar

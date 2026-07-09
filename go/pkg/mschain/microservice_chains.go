@@ -3,7 +3,7 @@ package mschain
 import (
 	"fmt"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 )
 
 var (

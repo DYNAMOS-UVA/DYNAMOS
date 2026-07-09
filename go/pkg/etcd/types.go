@@ -3,7 +3,7 @@ package etcd
 import (
 	"context"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 

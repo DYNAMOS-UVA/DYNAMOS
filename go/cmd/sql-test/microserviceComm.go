@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 

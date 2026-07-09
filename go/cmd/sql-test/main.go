@@ -7,9 +7,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/etcd"
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"

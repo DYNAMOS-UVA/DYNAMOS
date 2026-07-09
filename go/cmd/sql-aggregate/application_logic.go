@@ -13,7 +13,7 @@ package main
 import (
 	"context"
 
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	"go.opencensus.io/trace"
 	"go.opencensus.io/trace/propagation"
 	structpb "google.golang.org/protobuf/types/known/structpb"

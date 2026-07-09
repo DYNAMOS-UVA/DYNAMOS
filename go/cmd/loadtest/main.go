@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 
 	vegeta "github.com/tsenart/vegeta/v12/lib"
 )
