@@ -1,9 +1,5 @@
 # DYNAMOS Data Source Inventory for the Catalog
 
-Tracks: [issue #3](https://github.com/DYNAMOS-UVA/DYNAMOS/issues/3) — sub-issue of [#2](https://github.com/DYNAMOS-UVA/DYNAMOS/issues/2), input to [#4](https://github.com/DYNAMOS-UVA/DYNAMOS/issues/4) (schema design).
-
-This is a design/reference document — no code is produced here.
-
 ## Implementation reference
 
 - DSP Catalog Protocol: https://eclipse-dataspace-protocol-base.github.io/DataspaceProtocol/2025-1/#catalog-protocol
