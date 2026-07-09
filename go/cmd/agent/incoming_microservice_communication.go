@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	"go.opencensus.io/trace"
 )
 

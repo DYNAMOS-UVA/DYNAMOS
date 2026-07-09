@@ -3,7 +3,7 @@ package main
 import (
 	"net/http"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/api"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 

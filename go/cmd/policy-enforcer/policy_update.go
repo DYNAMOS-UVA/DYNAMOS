@@ -3,8 +3,8 @@ package main
 import (
 	"context"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/api"
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 )
 
 func checkPolicyUpdate(ctx context.Context, policyUpdate *pb.PolicyUpdate) {

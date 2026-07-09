@@ -1,4 +1,4 @@
-module github.com/Jorrit05/DYNAMOS
+module github.com/DYNAMOS-UVA/DYNAMOS
 
 go 1.22.0
 

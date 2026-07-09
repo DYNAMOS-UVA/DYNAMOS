@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Jorrit05/DYNAMOS/pkg/etcd"
-	"github.com/Jorrit05/DYNAMOS/pkg/lib"
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	"google.golang.org/protobuf/types/known/anypb"
 )
 

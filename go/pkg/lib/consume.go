@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	pb "github.com/Jorrit05/DYNAMOS/pkg/proto"
+	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 )
 
 type MessageHandlerFunc func(ctx context.Context, grpcMsg *pb.SideCarMessage) error
