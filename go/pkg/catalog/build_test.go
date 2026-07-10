@@ -82,6 +82,26 @@ func TestBuildCatalog_UnknownParticipant(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestBuildDataset(t *testing.T) {
+	ds, err := BuildDataset(testConfig(), "jorrit.stutterheim@cloudnation.nl", "urn:dynamos:dataset:VU:wageGap")
+	require.NoError(t, err)
+
+	assert.Equal(t, "urn:dynamos:dataset:VU:wageGap", ds.ID)
+	assert.Equal(t, "Dataset", ds.Type)
+	require.Len(t, ds.Distribution, 2)
+	require.Len(t, ds.HasPolicy, 1)
+}
+
+func TestBuildDataset_UnknownDatasetID(t *testing.T) {
+	_, err := BuildDataset(testConfig(), "jorrit.stutterheim@cloudnation.nl", "urn:dynamos:dataset:VU:nonexistent")
+	assert.Error(t, err)
+}
+
+func TestBuildDataset_UnknownParticipant(t *testing.T) {
+	_, err := BuildDataset(testConfig(), "nobody@example.com", "urn:dynamos:dataset:VU:wageGap")
+	assert.Error(t, err)
+}
+
 func TestBuildCatalog_MarshalsToValidJSONLD(t *testing.T) {
 	cat, err := BuildCatalog(testConfig(), "jorrit.stutterheim@cloudnation.nl")
 	require.NoError(t, err)
