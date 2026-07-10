@@ -96,3 +96,34 @@ func catalogRequestHandler(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(cat)
 }
+
+// catalogDatasetHandler implements GET /catalog/datasets/:id per the DSP
+// Catalog Protocol's Dataset Request Message - the second required message
+// type alongside Catalog Request (catalogRequestHandler above). Resolves the
+// requesting participant the same way, then returns the single Dataset
+// matching :id if it's visible to them, or a CatalogError otherwise.
+func catalogDatasetHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	participant, ok := participantFromRequest(r)
+	if !ok {
+		writeCatalogError(w, http.StatusUnauthorized, "missing-authorization", "An Authorization header identifying the requesting participant is required.")
+		return
+	}
+
+	datasetID := r.PathValue("id")
+	ds, err := catalog.BuildDataset(catalogConfig, participant, datasetID)
+	if err != nil {
+		logger.Sugar().Infow("Dataset request denied", "participant", participant, "dataset", datasetID, "error", err)
+		writeCatalogError(w, http.StatusNotFound, "not-found", "Dataset not found or not provisioned for this requester.")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(catalog.RootDataset{Context: catalog.Context, Dataset: *ds})
+}

@@ -38,3 +38,7 @@ datasets/*.csv
 
 *.drawio.bkp
 *.drawio.dtmp
+
+# DSP TCK run output (go/cmd/dsp-connector/tck/run-tck.sh) - reproducible
+# evidence, not something to keep committed
+go/cmd/dsp-connector/tck/*.log
