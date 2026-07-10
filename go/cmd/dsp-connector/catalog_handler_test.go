@@ -95,6 +95,68 @@ func TestCatalogRequestHandler_WrongMethod(t *testing.T) {
 	assert.Equal(t, http.MethodPost, rec.Header().Get("Allow"))
 }
 
+func TestCatalogDatasetHandler_KnownDataset(t *testing.T) {
+	setTestCatalogConfig(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:wageGap", nil)
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("id", "urn:dynamos:dataset:VU:wageGap")
+	rec := httptest.NewRecorder()
+
+	catalogDatasetHandler(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var ds catalog.RootDataset
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ds))
+	assert.Equal(t, "urn:dynamos:dataset:VU:wageGap", ds.ID)
+	assert.Equal(t, "Dataset", ds.Type)
+	assert.NotEmpty(t, ds.Context)
+}
+
+func TestCatalogDatasetHandler_UnknownDataset(t *testing.T) {
+	setTestCatalogConfig(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:nonexistent", nil)
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("id", "urn:dynamos:dataset:VU:nonexistent")
+	rec := httptest.NewRecorder()
+
+	catalogDatasetHandler(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+
+	var ce catalogError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ce))
+	assert.Equal(t, "CatalogError", ce.Type)
+	assert.Equal(t, "not-found", ce.Code)
+}
+
+func TestCatalogDatasetHandler_MissingAuthorization(t *testing.T) {
+	setTestCatalogConfig(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:wageGap", nil)
+	req.SetPathValue("id", "urn:dynamos:dataset:VU:wageGap")
+	rec := httptest.NewRecorder()
+
+	catalogDatasetHandler(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestCatalogDatasetHandler_WrongMethod(t *testing.T) {
+	setTestCatalogConfig(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:wageGap", nil)
+	req.SetPathValue("id", "urn:dynamos:dataset:VU:wageGap")
+	rec := httptest.NewRecorder()
+
+	catalogDatasetHandler(rec, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+	assert.Equal(t, http.MethodGet, rec.Header().Get("Allow"))
+}
+
 func TestCatalogRequestHandler_MalformedJSON(t *testing.T) {
 	setTestCatalogConfig(t)
 
