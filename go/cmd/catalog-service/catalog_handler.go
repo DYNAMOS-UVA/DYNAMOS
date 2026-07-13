@@ -41,13 +41,35 @@ func fetchConfigOrError(w http.ResponseWriter, participant string) (*catalog.Con
 	return nil, false
 }
 
+// fetchDatasetConfigOrError is fetchConfigOrError's counterpart for the
+// dataset endpoint - also handles ErrDatasetNotFound.
+func fetchDatasetConfigOrError(w http.ResponseWriter, participant, datasetID string) (*catalog.Config, bool) {
+	cfg, err := fetchDatasetConfig(etcdClient, party, participant, datasetID)
+	if err == nil {
+		return cfg, true
+	}
+
+	if errors.Is(err, ErrParticipantNotFound) {
+		writeInternalError(w, http.StatusNotFound, "participant-not-found", err.Error())
+		return nil, false
+	}
+	if errors.Is(err, ErrDatasetNotFound) {
+		writeInternalError(w, http.StatusNotFound, "dataset-not-found", err.Error())
+		return nil, false
+	}
+
+	logger.Sugar().Errorw("failed to fetch dataset config", "participant", participant, "dataset", datasetID, "error", err)
+	writeInternalError(w, http.StatusInternalServerError, "internal-error", "failed to fetch catalog data")
+	return nil, false
+}
+
 // internalCatalogHandler implements GET /internal/v1/catalog?participant={email}
 // (issue #28) - the internal counterpart to dsp-connector's DSP-facing
 // catalogRequestHandler, backed by live etcd data instead of a static config.
 func internalCatalogHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeInternalError(w, http.StatusMethodNotAllowed, "method-not-allowed", "method not allowed")
 		return
 	}
 
@@ -83,7 +105,7 @@ func internalCatalogHandler(w http.ResponseWriter, r *http.Request) {
 func internalDatasetHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		writeInternalError(w, http.StatusMethodNotAllowed, "method-not-allowed", "method not allowed")
 		return
 	}
 
@@ -93,17 +115,16 @@ func internalDatasetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg, ok := fetchConfigOrError(w, participant)
+	datasetID := r.PathValue("id")
+	cfg, ok := fetchDatasetConfigOrError(w, participant, datasetID)
 	if !ok {
 		return
 	}
 
-	datasetID := r.PathValue("id")
 	ds, err := catalog.BuildDataset(cfg, participant, datasetID)
 	if err != nil {
-		// Participant presence already validated by fetchConfigOrError, so
-		// this can only be an unknown datasetID.
-		writeInternalError(w, http.StatusNotFound, "dataset-not-found", err.Error())
+		logger.Sugar().Errorw("BuildDataset failed after successful fetch", "participant", participant, "dataset", datasetID, "error", err)
+		writeInternalError(w, http.StatusInternalServerError, "internal-error", "failed to build dataset")
 		return
 	}
 

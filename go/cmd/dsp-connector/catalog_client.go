@@ -32,7 +32,9 @@ var catalogServiceClient = &http.Client{Timeout: 5 * time.Second}
 // failures on catalog-service's side, network errors, etc).
 func errorFromResponse(resp *http.Response) error {
 	var ie internalErrorResponse
-	json.NewDecoder(resp.Body).Decode(&ie)
+	if err := json.NewDecoder(resp.Body).Decode(&ie); err != nil {
+		return fmt.Errorf("catalog-service returned %d with unparseable body: %w", resp.StatusCode, err)
+	}
 
 	switch ie.Code {
 	case "participant-not-found":
