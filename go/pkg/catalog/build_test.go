@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -15,7 +16,7 @@ func testConfig() *Config {
 		Datasets: []DatasetConfig{
 			{Name: "wageGap", Type: "csv", Delimiter: ";", Tables: []string{"Aanstellingen", "Personen"}},
 		},
-		Relations: map[string]RelationConfig{
+		Relations: map[string]api.Relation{
 			"jorrit.stutterheim@cloudnation.nl": {
 				ID:                      "GUID",
 				RequestTypes:            []string{"sqlDataRequest", "genericRequest"},

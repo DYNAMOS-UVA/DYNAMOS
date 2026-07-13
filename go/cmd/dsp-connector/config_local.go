@@ -8,7 +8,9 @@ import "go.uber.org/zap"
 var serviceName = "dsp-connector"
 var logLevel = zap.DebugLevel
 var port = ":8090"
-var catalogConfigPath = "./config/example-catalog.json"
+
+// catalog-service's own local port (go/cmd/catalog-service/config_local.go).
+var catalogServiceURL = "http://localhost:8091"
 
 // apiVersion is the base path DYNAMOS publishes for this service's DSP
 // catalog service endpoint. The DSP HTTPS binding only fixes what's appended

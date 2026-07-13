@@ -82,13 +82,18 @@ func catalogRequestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cat, err := catalog.BuildCatalog(catalogConfig, participant)
+	cat, err := fetchCatalog(participant)
 	if err != nil {
-		logger.Sugar().Infow("Catalog request denied", "participant", participant, "error", err)
-		// Per the DSP spec's own CatalogError example: an unrecognized
-		// requester is reported as "not provisioned", not a hard 4xx client
-		// error like a malformed request - the request itself was fine.
-		writeCatalogError(w, http.StatusForbidden, "not-provisioned", "Catalog not provisioned for this requester.")
+		if errors.Is(err, ErrParticipantNotFound) {
+			logger.Sugar().Infow("Catalog request denied", "participant", participant, "error", err)
+			// Per the DSP spec's own CatalogError example: an unrecognized
+			// requester is reported as "not provisioned", not a hard 4xx
+			// client error like a malformed request.
+			writeCatalogError(w, http.StatusForbidden, "not-provisioned", "Catalog not provisioned for this requester.")
+			return
+		}
+		logger.Sugar().Errorw("catalog-service request failed", "participant", participant, "error", err)
+		writeCatalogError(w, http.StatusBadGateway, "upstream-error", "Failed to retrieve catalog data.")
 		return
 	}
 
@@ -116,14 +121,19 @@ func catalogDatasetHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	datasetID := r.PathValue("id")
-	ds, err := catalog.BuildDataset(catalogConfig, participant, datasetID)
+	ds, err := fetchDataset(participant, datasetID)
 	if err != nil {
-		logger.Sugar().Infow("Dataset request denied", "participant", participant, "dataset", datasetID, "error", err)
-		writeCatalogError(w, http.StatusNotFound, "not-found", "Dataset not found or not provisioned for this requester.")
+		if errors.Is(err, ErrParticipantNotFound) || errors.Is(err, ErrDatasetNotFound) {
+			logger.Sugar().Infow("Dataset request denied", "participant", participant, "dataset", datasetID, "error", err)
+			writeCatalogError(w, http.StatusNotFound, "not-found", "Dataset not found or not provisioned for this requester.")
+			return
+		}
+		logger.Sugar().Errorw("catalog-service request failed", "participant", participant, "dataset", datasetID, "error", err)
+		writeCatalogError(w, http.StatusBadGateway, "upstream-error", "Failed to retrieve catalog data.")
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(catalog.RootDataset{Context: catalog.Context, Dataset: *ds})
+	json.NewEncoder(w).Encode(ds)
 }
