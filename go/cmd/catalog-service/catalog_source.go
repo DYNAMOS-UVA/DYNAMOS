@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
@@ -10,12 +11,16 @@ import (
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
+// ErrParticipantNotFound: sentinel so the internal API (issue #28) can tell a
+// business "unknown participant" (404) apart from an etcd I/O failure (500).
+var ErrParticipantNotFound = errors.New("no relation found for participant")
+
 // buildConfig builds a *catalog.Config from already-fetched data - pure, so
 // it's unit-testable with plain fixtures, no etcd needed.
 func buildConfig(party string, agreement *api.Agreement, participantEmail string, datasets map[string]*pb.Dataset) (*catalog.Config, error) {
 	relation, ok := agreement.Relations[participantEmail]
 	if !ok {
-		return nil, fmt.Errorf("no relation found for participant %q", participantEmail)
+		return nil, fmt.Errorf("%w: %q", ErrParticipantNotFound, participantEmail)
 	}
 
 	dsConfigs := make([]catalog.DatasetConfig, 0, len(relation.DataSets))
@@ -50,7 +55,7 @@ func fetchConfig(etcdClient *clientv3.Client, party, participantEmail string) (*
 
 	relation, ok := agreement.Relations[participantEmail]
 	if !ok {
-		return nil, fmt.Errorf("no relation found for participant %q", participantEmail)
+		return nil, fmt.Errorf("%w: %q", ErrParticipantNotFound, participantEmail)
 	}
 
 	datasets := make(map[string]*pb.Dataset, len(relation.DataSets))
