@@ -12,15 +12,71 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func setTestCatalogConfig(t *testing.T) {
+// fixtureCatalog/fixtureRootDataset match the VU/wageGap worked example used
+// throughout this repo's catalog tests (same data as
+// configuration/etcd_launch_files/{agreements,datasets}.json).
+func fixtureCatalog() catalog.Catalog {
+	return catalog.Catalog{
+		Context:       catalog.Context,
+		ID:            "urn:dynamos:catalog:VU:for-jorrit.stutterheim@cloudnation.nl",
+		Type:          "Catalog",
+		ParticipantID: "urn:dynamos:party:VU",
+		Dataset: []catalog.Dataset{
+			{ID: "urn:dynamos:dataset:VU:wageGap", Type: "Dataset"},
+		},
+	}
+}
+
+func fixtureRootDataset(id string) catalog.RootDataset {
+	return catalog.RootDataset{
+		Context: catalog.Context,
+		Dataset: catalog.Dataset{ID: id, Type: "Dataset"},
+	}
+}
+
+// startFixtureCatalogService stands in for a real catalog-service (issue
+// #28's internal API), so these tests don't need one running - only the
+// live regression check (TCK re-run) exercises the real service.
+func startFixtureCatalogService(t *testing.T) {
 	t.Helper()
-	cfg, err := catalog.LoadConfig("config/example-catalog.json")
-	require.NoError(t, err)
-	catalogConfig = cfg
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/internal/v1/catalog", func(w http.ResponseWriter, r *http.Request) {
+		participant := r.URL.Query().Get("participant")
+		w.Header().Set("Content-Type", "application/json")
+		if participant != "jorrit.stutterheim@cloudnation.nl" {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"code": "participant-not-found", "error": "no relation found"})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(fixtureCatalog())
+	})
+	mux.HandleFunc("/internal/v1/catalog/datasets/{id}", func(w http.ResponseWriter, r *http.Request) {
+		participant := r.URL.Query().Get("participant")
+		w.Header().Set("Content-Type", "application/json")
+		if participant != "jorrit.stutterheim@cloudnation.nl" {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"code": "participant-not-found", "error": "no relation found"})
+			return
+		}
+		id := r.PathValue("id")
+		if id != "urn:dynamos:dataset:VU:wageGap" {
+			w.WriteHeader(http.StatusNotFound)
+			json.NewEncoder(w).Encode(map[string]string{"code": "dataset-not-found", "error": "unknown dataset"})
+			return
+		}
+		w.WriteHeader(http.StatusOK)
+		json.NewEncoder(w).Encode(fixtureRootDataset(id))
+	})
+
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+	catalogServiceURL = ts.URL
 }
 
 func TestCatalogRequestHandler_KnownParticipant(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	body := `{"@context":["https://w3id.org/dspace/2025/1/context.jsonld"],"@type":"CatalogRequestMessage","filter":[]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", bytes.NewBufferString(body))
@@ -40,7 +96,7 @@ func TestCatalogRequestHandler_KnownParticipant(t *testing.T) {
 }
 
 func TestCatalogRequestHandler_EmptyBodyStillWorks(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", nil)
 	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
@@ -52,7 +108,7 @@ func TestCatalogRequestHandler_EmptyBodyStillWorks(t *testing.T) {
 }
 
 func TestCatalogRequestHandler_UnknownParticipant(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", bytes.NewBufferString("{}"))
 	req.Header.Set("Authorization", "nobody@example.com")
@@ -69,7 +125,7 @@ func TestCatalogRequestHandler_UnknownParticipant(t *testing.T) {
 }
 
 func TestCatalogRequestHandler_MissingAuthorization(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", bytes.NewBufferString("{}"))
 	rec := httptest.NewRecorder()
@@ -84,7 +140,7 @@ func TestCatalogRequestHandler_MissingAuthorization(t *testing.T) {
 }
 
 func TestCatalogRequestHandler_WrongMethod(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/catalog/request", nil)
 	rec := httptest.NewRecorder()
@@ -96,7 +152,7 @@ func TestCatalogRequestHandler_WrongMethod(t *testing.T) {
 }
 
 func TestCatalogDatasetHandler_KnownDataset(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:wageGap", nil)
 	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
@@ -115,7 +171,7 @@ func TestCatalogDatasetHandler_KnownDataset(t *testing.T) {
 }
 
 func TestCatalogDatasetHandler_UnknownDataset(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:nonexistent", nil)
 	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
@@ -133,7 +189,7 @@ func TestCatalogDatasetHandler_UnknownDataset(t *testing.T) {
 }
 
 func TestCatalogDatasetHandler_MissingAuthorization(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:wageGap", nil)
 	req.SetPathValue("id", "urn:dynamos:dataset:VU:wageGap")
@@ -145,7 +201,7 @@ func TestCatalogDatasetHandler_MissingAuthorization(t *testing.T) {
 }
 
 func TestCatalogDatasetHandler_WrongMethod(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:wageGap", nil)
 	req.SetPathValue("id", "urn:dynamos:dataset:VU:wageGap")
@@ -158,7 +214,7 @@ func TestCatalogDatasetHandler_WrongMethod(t *testing.T) {
 }
 
 func TestCatalogRequestHandler_MalformedJSON(t *testing.T) {
-	setTestCatalogConfig(t)
+	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", bytes.NewBufferString("{not json"))
 	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
@@ -171,4 +227,25 @@ func TestCatalogRequestHandler_MalformedJSON(t *testing.T) {
 	var ce catalogError
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ce))
 	assert.Equal(t, "invalid-request", ce.Code)
+}
+
+func TestCatalogRequestHandler_UpstreamError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		json.NewEncoder(w).Encode(map[string]string{"code": "internal-error", "error": "etcd unavailable"})
+	}))
+	t.Cleanup(ts.Close)
+	catalogServiceURL = ts.URL
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", bytes.NewBufferString("{}"))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	rec := httptest.NewRecorder()
+
+	catalogRequestHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadGateway, rec.Code)
+
+	var ce catalogError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ce))
+	assert.Equal(t, "upstream-error", ce.Code)
 }

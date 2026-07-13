@@ -12,5 +12,6 @@ var port = ":8091"
 // Overridden by DATA_STEWARD_NAME if set - default matches the VU worked example.
 var party = "VU"
 
-// Same kind-cluster etcd NodePort orchestrator uses locally.
-var etcdEndpoints = "http://localhost:30005"
+// Matches pf.sh's etcd port-forward (:2379), the project's actual local-dev
+// convention - not orchestrator's :30005 NodePort default, which pf.sh doesn't forward.
+var etcdEndpoints = "http://localhost:2379"
