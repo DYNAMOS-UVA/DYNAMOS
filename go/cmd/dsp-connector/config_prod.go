@@ -9,10 +9,10 @@ var serviceName = "dsp-connector"
 var logLevel = zap.DebugLevel
 var port = ":8080"
 
-// catalogConfigPath is a placeholder until deployment wiring (e.g. a Helm
-// ConfigMap mount) delivers a real config file into the container at this
-// path - out of scope for issue #9, which only covers the loader itself.
-var catalogConfigPath = "/app/config/catalog.json"
+// Placeholder - catalog-service has no Helm chart/Service yet (T1.5-adjacent
+// scope, not started). Assumes same namespace-per-service convention as
+// api-gateway/orchestrator once it exists.
+var catalogServiceURL = "http://catalog-service.catalog-service.svc.cluster.local:8080"
 
 // apiVersion is the base path DYNAMOS publishes for this service's DSP
 // catalog service endpoint. The DSP HTTPS binding only fixes what's appended
