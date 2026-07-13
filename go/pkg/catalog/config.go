@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 )
 
 // Config is the config-file-driven source for a Catalog, loaded instead of a
@@ -14,11 +16,15 @@ import (
 // reference — rather than a new format. Swapping this loader for a live
 // etcd-backed source later should only require a new LoadConfig-equivalent;
 // Catalog/Dataset/BuildCatalog do not know where a Config came from.
+//
+// Relations uses api.Relation directly (not a package-local mirror struct) so
+// catalog-service (issue #27) can plug in an etcd-fetched api.Agreement's
+// Relations map without a conversion step.
 type Config struct {
-	Party         string                    `json:"party"`
-	AgentEndpoint string                    `json:"agentEndpoint"`
-	Datasets      []DatasetConfig           `json:"datasets"`
-	Relations     map[string]RelationConfig `json:"relations"`
+	Party         string                  `json:"party"`
+	AgentEndpoint string                  `json:"agentEndpoint"`
+	Datasets      []DatasetConfig         `json:"datasets"`
+	Relations     map[string]api.Relation `json:"relations"`
 }
 
 // DatasetConfig mirrors the pb.Dataset proto fields (proto-files/etcd.proto).
@@ -30,16 +36,6 @@ type DatasetConfig struct {
 	Type      string   `json:"type"`
 	Delimiter string   `json:"delimiter"`
 	Tables    []string `json:"tables"`
-}
-
-// RelationConfig mirrors the Relation struct (go/pkg/api/http.go), keyed by
-// counterparty identity in Config.Relations, same as Agreement.relations.
-type RelationConfig struct {
-	ID                      string   `json:"id"`
-	RequestTypes            []string `json:"requestTypes"`
-	DataSets                []string `json:"dataSets"`
-	AllowedArchetypes       []string `json:"allowedArchetypes"`
-	AllowedComputeProviders []string `json:"allowedComputeProviders"`
 }
 
 // LoadConfig reads, parses, and validates a catalog config file from disk.

@@ -3,6 +3,8 @@ package catalog
 import (
 	"fmt"
 	"strings"
+
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 )
 
 // datasetsForParticipant resolves the party/service identifiers and builds
@@ -10,10 +12,10 @@ import (
 // BuildCatalog and BuildDataset - the DSP Catalog Protocol's two required
 // message types (Catalog Request and Dataset Request) - so both agree on
 // what a participant can see and how each Dataset is shaped.
-func datasetsForParticipant(cfg *Config, participantEmail string) (relation RelationConfig, partyURN, serviceID string, datasets []Dataset, err error) {
+func datasetsForParticipant(cfg *Config, participantEmail string) (relation api.Relation, partyURN, serviceID string, datasets []Dataset, err error) {
 	relation, ok := cfg.Relations[participantEmail]
 	if !ok {
-		return RelationConfig{}, "", "", nil, fmt.Errorf("no relation found for participant %q", participantEmail)
+		return api.Relation{}, "", "", nil, fmt.Errorf("no relation found for participant %q", participantEmail)
 	}
 
 	partyURN = fmt.Sprintf("urn:dynamos:party:%s", cfg.Party)
@@ -28,7 +30,7 @@ func datasetsForParticipant(cfg *Config, participantEmail string) (relation Rela
 	for _, dsName := range relation.DataSets {
 		dsCfg, ok := datasetByName[dsName]
 		if !ok {
-			return RelationConfig{}, "", "", nil, fmt.Errorf("relation %q references unknown dataset %q", relation.ID, dsName)
+			return api.Relation{}, "", "", nil, fmt.Errorf("relation %q references unknown dataset %q", relation.ID, dsName)
 		}
 		datasets = append(datasets, buildDataset(cfg.Party, dsCfg, relation, serviceID, partyURN, participantEmail))
 	}
@@ -82,7 +84,7 @@ func BuildDataset(cfg *Config, participantEmail, datasetID string) (*Dataset, er
 	return nil, fmt.Errorf("no dataset %q visible to participant %q", datasetID, participantEmail)
 }
 
-func buildDataset(party string, ds DatasetConfig, rel RelationConfig, serviceID, partyURN, assigneeEmail string) Dataset {
+func buildDataset(party string, ds DatasetConfig, rel api.Relation, serviceID, partyURN, assigneeEmail string) Dataset {
 	constraints := []Constraint{
 		{LeftOperand: "dynamos:archetype", Operator: "isAnyOf", RightOperand: rel.AllowedArchetypes},
 		{LeftOperand: "dynamos:computeProvider", Operator: "isAnyOf", RightOperand: rel.AllowedComputeProviders},
