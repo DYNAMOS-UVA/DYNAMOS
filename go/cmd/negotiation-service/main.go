@@ -13,6 +13,7 @@ import (
 var (
 	logger     = lib.InitLogger(logLevel)
 	etcdClient *clientv3.Client
+	store      *Store
 )
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -38,8 +39,18 @@ func main() {
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()
 
+	store = NewStore(etcdClient, party)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/internal/v1/negotiations", negotiationsCollectionHandler)
+	mux.HandleFunc("/internal/v1/negotiations/{id}", negotiationHandler)
+	mux.HandleFunc("/internal/v1/negotiations/{id}/request", negotiationRequestHandler)
+	mux.HandleFunc("/internal/v1/negotiations/{id}/offer", negotiationOfferHandler)
+	mux.HandleFunc("/internal/v1/negotiations/{id}/events", negotiationEventsHandler)
+	mux.HandleFunc("/internal/v1/negotiations/{id}/agreement", negotiationAgreementHandler)
+	mux.HandleFunc("/internal/v1/negotiations/{id}/agreement/verification", negotiationVerificationHandler)
+	mux.HandleFunc("/internal/v1/negotiations/{id}/termination", negotiationTerminationHandler)
 
 	logger.Sugar().Infow("Starting negotiation-service http server", "port", port, "party", party)
 	if err := http.ListenAndServe(port, mux); err != nil {
