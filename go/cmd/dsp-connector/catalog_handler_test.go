@@ -22,7 +22,13 @@ func fixtureCatalog() catalog.Catalog {
 		Type:          "Catalog",
 		ParticipantID: "urn:dynamos:party:VU",
 		Dataset: []catalog.Dataset{
-			{ID: "urn:dynamos:dataset:VU:wageGap", Type: "Dataset"},
+			{
+				ID:   "urn:dynamos:dataset:VU:wageGap",
+				Type: "Dataset",
+				HasPolicy: []catalog.Offer{
+					{ID: "urn:dynamos:offer:VU:GUID", Type: "Offer", Assigner: "urn:dynamos:party:VU", Assignee: "mailto:jorrit.stutterheim@cloudnation.nl"},
+				},
+			},
 		},
 	}
 }

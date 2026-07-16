@@ -14,6 +14,11 @@ var port = ":8080"
 // api-gateway/orchestrator once it exists.
 var catalogServiceURL = "http://catalog-service.catalog-service.svc.cluster.local:8080"
 
+// Placeholder - negotiation-service has no Helm chart/Service yet (T2.6,
+// not started). Assumes the same namespace-per-service convention
+// catalog-service's own placeholder used, until T2.6 confirms the real DNS.
+var negotiationServiceURL = "http://negotiation-service.negotiation-service.svc.cluster.local:8080"
+
 // apiVersion is the base path DYNAMOS publishes for this service's DSP
 // catalog service endpoint. The DSP HTTPS binding only fixes what's appended
 // to <base> (/catalog/request) - <base> itself is whatever DYNAMOS
