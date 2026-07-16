@@ -36,7 +36,16 @@ func fixtureCatalog() catalog.Catalog {
 func fixtureRootDataset(id string) catalog.RootDataset {
 	return catalog.RootDataset{
 		Context: catalog.Context,
-		Dataset: catalog.Dataset{ID: id, Type: "Dataset"},
+		Dataset: catalog.Dataset{
+			ID:   id,
+			Type: "Dataset",
+			// Real catalog-service's dataset endpoint always includes
+			// HasPolicy (pkg/catalog.BuildDataset), same as the catalog
+			// endpoint - kept in sync with fixtureCatalog()'s wageGap entry.
+			HasPolicy: []catalog.Offer{
+				{ID: "urn:dynamos:offer:VU:GUID", Type: "Offer", Assigner: "urn:dynamos:party:VU", Assignee: "mailto:jorrit.stutterheim@cloudnation.nl"},
+			},
+		},
 	}
 }
 

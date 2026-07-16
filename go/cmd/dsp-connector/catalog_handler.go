@@ -61,9 +61,7 @@ func participantFromRequest(r *http.Request) (string, bool) {
 // participant, and returns the DCAT-compliant JSON-LD Catalog built from the
 // config loaded at startup (see loadCatalogConfig in main.go).
 func catalogRequestHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -108,9 +106,7 @@ func catalogRequestHandler(w http.ResponseWriter, r *http.Request) {
 // requesting participant the same way, then returns the single Dataset
 // matching :id if it's visible to them, or a CatalogError otherwise.
 func catalogDatasetHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 

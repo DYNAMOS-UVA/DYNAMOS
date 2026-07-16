@@ -159,6 +159,7 @@ func TestNegotiationGetHandler_Found(t *testing.T) {
 	startFixtureNegotiationService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1", nil)
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
 	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
 	rec := httptest.NewRecorder()
 
@@ -174,6 +175,7 @@ func TestNegotiationGetHandler_NotFound(t *testing.T) {
 	startFixtureNegotiationService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/negotiations/urn:dynamos:negotiation:VU:missing", nil)
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
 	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:missing")
 	rec := httptest.NewRecorder()
 
@@ -185,11 +187,27 @@ func TestNegotiationGetHandler_NotFound(t *testing.T) {
 	assert.Equal(t, "not-found", ne.Code)
 }
 
+func TestNegotiationGetHandler_MissingAuthorization(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1", nil)
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationGetHandler(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "missing-authorization", ne.Code)
+}
+
 func TestNegotiationEventsHandler_WrongEventType(t *testing.T) {
 	startFixtureNegotiationService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/events",
 		bytes.NewBufferString(`{"eventType":"FINALIZED","providerPid":"urn:dynamos:negotiation:VU:fixture-1","consumerPid":"urn:example:consumer:1"}`))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
 	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
 	rec := httptest.NewRecorder()
 
@@ -207,6 +225,7 @@ func TestNegotiationEventsHandler_InvalidTransition(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/events",
 		bytes.NewBufferString(`{"eventType":"ACCEPTED","providerPid":"urn:dynamos:negotiation:VU:fixture-1","consumerPid":"urn:example:consumer:1"}`))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
 	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
 	rec := httptest.NewRecorder()
 
@@ -216,6 +235,152 @@ func TestNegotiationEventsHandler_InvalidTransition(t *testing.T) {
 	var ne negotiationError
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
 	assert.Equal(t, "invalid-transition", ne.Code)
+}
+
+func TestNegotiationEventsHandler_EmptyBody(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/events", nil)
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationEventsHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "invalid-request", ne.Code, "an empty/missing body must be reported as invalid-request, not invalid-event-type")
+}
+
+func TestNegotiationEventsHandler_MissingAuthorization(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/events",
+		bytes.NewBufferString(`{"eventType":"ACCEPTED"}`))
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationEventsHandler(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "missing-authorization", ne.Code)
+}
+
+func TestNegotiationVerificationHandler_MissingAuthorization(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/agreement/verification", bytes.NewBufferString(`{}`))
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationVerificationHandler(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "missing-authorization", ne.Code)
+}
+
+func TestNegotiationTerminationHandler_MissingAuthorization(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/termination", bytes.NewBufferString(`{}`))
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationTerminationHandler(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "missing-authorization", ne.Code)
+}
+
+// TestNegotiationRequestHandler_ValidCounterRequest exercises the
+// counter-request endpoint directly - previously only reachable via its
+// fixture route, never actually called by a test.
+func TestNegotiationRequestHandler_ValidCounterRequest(t *testing.T) {
+	startFixtureCatalogService(t)
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/request",
+		bytes.NewBufferString(offerBody("urn:dynamos:offer:VU:GUID")))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationRequestHandler(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var ack negotiationAck
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ack))
+	assert.Equal(t, "REQUESTED", ack.State)
+}
+
+func TestNegotiationRequestHandler_UnknownOffer(t *testing.T) {
+	startFixtureCatalogService(t)
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/request",
+		bytes.NewBufferString(offerBody("urn:dynamos:offer:VU:doesnotexist")))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationRequestHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "invalid-offer", ne.Code)
+}
+
+func TestNegotiationRequestHandler_UnprovisionedParticipant(t *testing.T) {
+	startFixtureCatalogService(t)
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/request",
+		bytes.NewBufferString(offerBody("urn:dynamos:offer:VU:GUID")))
+	req.Header.Set("Authorization", "nobody@example.com")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationRequestHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "invalid-offer", ne.Code)
+	// Must be the clean message, not fetchCatalog's raw sentinel text leaking
+	// through (the bug this replaces: init and counter-request handlers used
+	// to disagree on this message for the identical underlying condition).
+	assert.Equal(t, []string{"Catalog not provisioned for this requester."}, ne.Reason)
+}
+
+func TestNegotiationRequestHandler_MissingAuthorization(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/request",
+		bytes.NewBufferString(offerBody("urn:dynamos:offer:VU:GUID")))
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationRequestHandler(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestNegotiationRequestHandler_WrongMethod(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/request", nil)
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationRequestHandler(rec, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
 }
 
 // TestNegotiationLifecycle_FullPath drives one negotiation through every
@@ -241,12 +406,14 @@ func TestNegotiationLifecycle_FullPath(t *testing.T) {
 
 	acceptReq := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/"+providerPid+"/events",
 		bytes.NewBufferString(`{"eventType":"ACCEPTED","providerPid":"`+providerPid+`","consumerPid":"urn:example:consumer:1"}`))
+	acceptReq.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
 	acceptReq.SetPathValue("providerPid", providerPid)
 	acceptRec := httptest.NewRecorder()
 	negotiationEventsHandler(acceptRec, acceptReq)
 	require.Equal(t, http.StatusOK, acceptRec.Code)
 
 	verifyReq := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/"+providerPid+"/agreement/verification", bytes.NewBufferString(`{}`))
+	verifyReq.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
 	verifyReq.SetPathValue("providerPid", providerPid)
 	verifyRec := httptest.NewRecorder()
 	negotiationVerificationHandler(verifyRec, verifyReq)
@@ -256,6 +423,7 @@ func TestNegotiationLifecycle_FullPath(t *testing.T) {
 	assert.Equal(t, "VERIFIED", verified.State)
 
 	terminateReq := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/"+providerPid+"/termination", bytes.NewBufferString(`{}`))
+	terminateReq.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
 	terminateReq.SetPathValue("providerPid", providerPid)
 	terminateRec := httptest.NewRecorder()
 	negotiationTerminationHandler(terminateRec, terminateReq)

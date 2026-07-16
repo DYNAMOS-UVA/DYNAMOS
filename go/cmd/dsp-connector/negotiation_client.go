@@ -18,13 +18,6 @@ var (
 	ErrNegotiationInvalidTransition = errors.New("negotiation-service: invalid state transition")
 )
 
-// negotiationServiceErrorResponse mirrors negotiation-service's own
-// internalError shape (go/cmd/negotiation-service/negotiation_handler.go).
-type negotiationServiceErrorResponse struct {
-	Code  string `json:"code"`
-	Error string `json:"error"`
-}
-
 // negotiationRecord is the subset of negotiation-service's Negotiation JSON
 // this connector actually needs to build a DSP ContractNegotiation ack -
 // Party/Offer/Agreement/timestamps stay internal to negotiation-service.
@@ -36,24 +29,19 @@ type negotiationRecord struct {
 
 var negotiationServiceClient = &http.Client{Timeout: 5 * time.Second}
 
+// negotiationServiceErrorCodes maps negotiation-service's internal-API error
+// codes (go/cmd/negotiation-service/negotiation_handler.go) to this
+// package's sentinels.
+var negotiationServiceErrorCodes = map[string]error{
+	"negotiation-not-found": ErrNegotiationNotFound,
+	"invalid-transition":    ErrNegotiationInvalidTransition,
+}
+
 // negotiationErrorFromResponse maps a non-2xx negotiation-service response to
 // a sentinel error, or a generic wrapped error for anything unexpected (etcd
-// I/O failures on negotiation-service's side, network errors, etc) - same
-// shape as catalog_client.go's errorFromResponse.
+// I/O failures on negotiation-service's side, network errors, etc).
 func negotiationErrorFromResponse(resp *http.Response) error {
-	var ne negotiationServiceErrorResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ne); err != nil {
-		return fmt.Errorf("negotiation-service returned %d with unparseable body: %w", resp.StatusCode, err)
-	}
-
-	switch ne.Code {
-	case "negotiation-not-found":
-		return ErrNegotiationNotFound
-	case "invalid-transition":
-		return ErrNegotiationInvalidTransition
-	default:
-		return fmt.Errorf("negotiation-service returned %d (%s): %s", resp.StatusCode, ne.Code, ne.Error)
-	}
+	return mapInternalServiceError("negotiation-service", resp, negotiationServiceErrorCodes)
 }
 
 // postNegotiation POSTs body (JSON-encoded, may be nil) to path on

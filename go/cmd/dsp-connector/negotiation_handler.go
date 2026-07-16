@@ -20,39 +20,35 @@ var (
 )
 
 // contractRequestMessage mirrors the DSP ContractRequestMessage shape
-// (docs/negotiation/spec-reference/negotiation/contract-request-message-schema.json).
-// Used for both the initiating request (POST /negotiations/request, no
-// providerPid) and the counter-request (POST /negotiations/:providerPid/request).
+// (docs/negotiation/spec-reference/negotiation/contract-request-message-schema.json) -
+// only the fields this handler actually acts on. @context/@type/providerPid/
+// callbackAddress round-trip in the real DSP message but aren't read here
+// (the path providerPid drives every operation, and there's no outbound
+// callback dispatch in this slice), so they're left undecoded rather than
+// carried as dead struct fields.
 type contractRequestMessage struct {
-	Context         interface{}     `json:"@context"`
-	Type            string          `json:"@type"`
-	ConsumerPid     string          `json:"consumerPid"`
-	ProviderPid     string          `json:"providerPid,omitempty"`
-	Offer           json.RawMessage `json:"offer"`
-	CallbackAddress string          `json:"callbackAddress,omitempty"`
+	ConsumerPid string          `json:"consumerPid"`
+	Offer       json.RawMessage `json:"offer"`
 }
 
 // negotiationEventMessage mirrors the DSP ContractNegotiationEventMessage
-// shape. This endpoint only ever receives eventType ACCEPTED (Consumer-sent)
-// - FINALIZED is Provider-sent, delivered to the Consumer's callback, never
-// received here (see docs/negotiation/dsp-negotiation-state-machine.md's
-// provider/consumer endpoint asymmetry note).
+// shape - only the fields this handler acts on (see contractRequestMessage's
+// comment on why @context/@type/providerPid aren't decoded). This endpoint
+// only ever receives eventType ACCEPTED (Consumer-sent) - FINALIZED is
+// Provider-sent, delivered to the Consumer's callback, never received here
+// (see docs/negotiation/dsp-negotiation-state-machine.md's provider/consumer
+// endpoint asymmetry note).
 type negotiationEventMessage struct {
-	Context     interface{} `json:"@context"`
-	Type        string      `json:"@type"`
-	ProviderPid string      `json:"providerPid"`
-	ConsumerPid string      `json:"consumerPid"`
-	EventType   string      `json:"eventType"`
+	ConsumerPid string `json:"consumerPid"`
+	EventType   string `json:"eventType"`
 }
 
 // negotiationTerminationMessage mirrors the DSP
-// ContractNegotiationTerminationMessage shape. Code/reason are accepted (so
-// a well-formed message round-trips) but only logged - negotiation-service
+// ContractNegotiationTerminationMessage shape - only the fields this handler
+// acts on (see contractRequestMessage's comment). Code/reason are accepted
+// (so a well-formed message round-trips) but only logged - negotiation-service
 // doesn't persist termination reasons, same as its own internal API.
 type negotiationTerminationMessage struct {
-	Context     interface{}   `json:"@context"`
-	Type        string        `json:"@type"`
-	ProviderPid string        `json:"providerPid"`
 	ConsumerPid string        `json:"consumerPid"`
 	Code        string        `json:"code,omitempty"`
 	Reason      []interface{} `json:"reason,omitempty"`
@@ -137,6 +133,12 @@ func mapNegotiationServiceError(w http.ResponseWriter, providerPid, consumerPid 
 // validateOffer checks offer against participant's real catalog (decision:
 // dsp-connector validates offer.@id via its existing catalog-service client;
 // negotiation-service never sees or interprets the catalog at all).
+//
+// When the offer carries a target (the usual case - a real Contract Request
+// Message's offer names the Dataset it applies to), this fetches only that
+// one Dataset via fetchDataset instead of the participant's whole Catalog -
+// a single targeted lookup instead of an O(all datasets) fetch-and-scan.
+// Falls back to a full-catalog scan only if target is absent.
 func validateOffer(participant string, offer json.RawMessage) error {
 	var ref offerRef
 	if err := json.Unmarshal(offer, &ref); err != nil {
@@ -146,20 +148,31 @@ func validateOffer(participant string, offer json.RawMessage) error {
 		return fmt.Errorf("%w: offer.@id is required", ErrInvalidOffer)
 	}
 
+	if ref.Target != "" {
+		ds, err := fetchDataset(participant, ref.Target)
+		if err != nil {
+			if errors.Is(err, ErrDatasetNotFound) {
+				return fmt.Errorf("%w: target %q not found", ErrInvalidOffer, ref.Target)
+			}
+			return err
+		}
+		for _, o := range ds.HasPolicy {
+			if o.ID == ref.ID {
+				return nil
+			}
+		}
+		return fmt.Errorf("%w: target %q does not carry offer %q", ErrInvalidOffer, ref.Target, ref.ID)
+	}
+
 	cat, err := fetchCatalog(participant)
 	if err != nil {
 		return err
 	}
-
 	for _, ds := range cat.Dataset {
 		for _, o := range ds.HasPolicy {
-			if o.ID != ref.ID {
-				continue
+			if o.ID == ref.ID {
+				return nil
 			}
-			if ref.Target != "" && ref.Target != ds.ID {
-				return fmt.Errorf("%w: target %q does not match offer %q's dataset %q", ErrInvalidOffer, ref.Target, ref.ID, ds.ID)
-			}
-			return nil
 		}
 	}
 	return fmt.Errorf("%w: %q", ErrOfferNotFound, ref.ID)
@@ -194,9 +207,7 @@ func decodeContractRequest(r *http.Request) (*contractRequestMessage, error) {
 // REQUESTED, validating the offer against the requester's real catalog
 // before creating anything in negotiation-service.
 func negotiationRequestInitHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -239,13 +250,17 @@ func negotiationRequestInitHandler(w http.ResponseWriter, r *http.Request) {
 
 // negotiationGetHandler implements GET /negotiations/:providerPid.
 func negotiationGetHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodGet) {
 		return
 	}
 
 	providerPid := r.PathValue("providerPid")
+
+	if _, ok := participantFromRequest(r); !ok {
+		writeNegotiationError(w, http.StatusUnauthorized, providerPid, "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
+		return
+	}
+
 	n, err := fetchNegotiation(providerPid)
 	if err != nil {
 		mapNegotiationServiceError(w, providerPid, "", err)
@@ -258,9 +273,7 @@ func negotiationGetHandler(w http.ResponseWriter, r *http.Request) {
 // negotiationRequestHandler implements POST /negotiations/:providerPid/request
 // (counter-request) - same offer validation as the initiating endpoint.
 func negotiationRequestHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
@@ -279,9 +292,14 @@ func negotiationRequestHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := validateOffer(participant, msg.Offer); err != nil {
-		if errors.Is(err, ErrOfferNotFound) || errors.Is(err, ErrInvalidOffer) || errors.Is(err, ErrParticipantNotFound) {
+		if errors.Is(err, ErrOfferNotFound) || errors.Is(err, ErrInvalidOffer) {
 			logger.Sugar().Infow("Counter-request denied: invalid offer", "participant", participant, "error", err)
 			writeNegotiationError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-offer", err.Error())
+			return
+		}
+		if errors.Is(err, ErrParticipantNotFound) {
+			logger.Sugar().Infow("Counter-request denied: unprovisioned participant", "participant", participant, "error", err)
+			writeNegotiationError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-offer", "Catalog not provisioned for this requester.")
 			return
 		}
 		logger.Sugar().Errorw("catalog-service request failed", "participant", participant, "error", err)
@@ -304,21 +322,30 @@ func negotiationRequestHandler(w http.ResponseWriter, r *http.Request) {
 // a Consumer sending FINALIZED is a protocol violation, rejected as 400 per
 // the spec's cross-sending rule.
 func negotiationEventsHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	providerPid := r.PathValue("providerPid")
 
+	if _, ok := participantFromRequest(r); !ok {
+		writeNegotiationError(w, http.StatusUnauthorized, providerPid, "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
+		return
+	}
+
 	var msg negotiationEventMessage
-	if r.Body != nil {
-		defer r.Body.Close()
-		if err := json.NewDecoder(r.Body).Decode(&msg); err != nil && !errors.Is(err, io.EOF) {
-			writeNegotiationError(w, http.StatusBadRequest, providerPid, "", "invalid-request", err.Error())
+	if r.Body == nil {
+		writeNegotiationError(w, http.StatusBadRequest, providerPid, "", "invalid-request", "request body is required")
+		return
+	}
+	defer r.Body.Close()
+	if err := json.NewDecoder(r.Body).Decode(&msg); err != nil {
+		if errors.Is(err, io.EOF) {
+			writeNegotiationError(w, http.StatusBadRequest, providerPid, "", "invalid-request", "request body is required")
 			return
 		}
+		writeNegotiationError(w, http.StatusBadRequest, providerPid, "", "invalid-request", err.Error())
+		return
 	}
 
 	if msg.EventType != "ACCEPTED" {
@@ -338,13 +365,17 @@ func negotiationEventsHandler(w http.ResponseWriter, r *http.Request) {
 // negotiationVerificationHandler implements
 // POST /negotiations/:providerPid/agreement/verification.
 func negotiationVerificationHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	providerPid := r.PathValue("providerPid")
+
+	if _, ok := participantFromRequest(r); !ok {
+		writeNegotiationError(w, http.StatusUnauthorized, providerPid, "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
+		return
+	}
+
 	n, err := verifyNegotiationAgreement(providerPid)
 	if err != nil {
 		mapNegotiationServiceError(w, providerPid, "", err)
@@ -357,13 +388,16 @@ func negotiationVerificationHandler(w http.ResponseWriter, r *http.Request) {
 // negotiationTerminationHandler implements
 // POST /negotiations/:providerPid/termination. code/reason are logged only.
 func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 
 	providerPid := r.PathValue("providerPid")
+
+	if _, ok := participantFromRequest(r); !ok {
+		writeNegotiationError(w, http.StatusUnauthorized, providerPid, "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
+		return
+	}
 
 	var msg negotiationTerminationMessage
 	if r.Body != nil {
