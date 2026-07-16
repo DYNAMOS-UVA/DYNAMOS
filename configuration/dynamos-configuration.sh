@@ -106,7 +106,15 @@ helm repo update
 helm upgrade -i -f "${core_chart}/prometheus-values.yaml" prometheus prometheus-community/prometheus
 
 echo "Installing NGINX..."
+# Drop the controller Deployment first so a stale kubectl-patch field owner
+# doesn't conflict with helm's server-side apply.
+kubectl delete deployment nginx-nginx-ingress-controller -n ingress --ignore-not-found
 helm upgrade -i -f "${core_chart}/ingress-values.yaml" nginx oci://ghcr.io/nginxinc/charts/nginx-ingress -n ingress --version 0.18.0
+
+echo "Re-enabling NGINX snippets..."
+kubectl patch deployment nginx-nginx-ingress-controller -n ingress \
+  --type=json \
+  -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"-enable-snippets=true"}]'
 
 echo "Installing Gateway API CRDs (required by Linkerd)..."
 kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
