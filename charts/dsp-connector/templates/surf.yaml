@@ -25,7 +25,7 @@ spec:
         - name: DATA_STEWARD_NAME
           value: SURF
         - name: CATALOG_SERVICE_URL
-          value: "http://catalog-service-surf.catalog-service.svc.cluster.local:8080"
+          value: {{ .Values.catalogServiceURL.surf | quote }}
 
 ---
 

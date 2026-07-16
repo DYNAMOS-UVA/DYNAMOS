@@ -25,7 +25,7 @@ spec:
         - name: DATA_STEWARD_NAME
           value: VU
         - name: CATALOG_SERVICE_URL
-          value: "http://catalog-service-vu.catalog-service.svc.cluster.local:8080"
+          value: {{ .Values.catalogServiceURL.vu | quote }}
 
 ---
 

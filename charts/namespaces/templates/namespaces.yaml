@@ -109,7 +109,7 @@ metadata:
     "helm.sh/resource-policy": keep
     "app.kubernetes.io/managed-by": "Helm"
     "linkerd.io/inject" : enabled
-    "config.linkerd.io/trace-collector": collector.linkerd-jaeger:55678 # or 14268?
+    "config.linkerd.io/trace-collector": collector.linkerd-jaeger:55678
 
 ---
 
@@ -121,7 +121,7 @@ metadata:
     "helm.sh/resource-policy": keep
     "app.kubernetes.io/managed-by": "Helm"
     "linkerd.io/inject" : enabled
-    "config.linkerd.io/trace-collector": collector.linkerd-jaeger:55678 # or 14268?
+    "config.linkerd.io/trace-collector": collector.linkerd-jaeger:55678
 
 ---
 

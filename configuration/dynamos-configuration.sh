@@ -112,9 +112,14 @@ kubectl delete deployment nginx-nginx-ingress-controller -n ingress --ignore-not
 helm upgrade -i -f "${core_chart}/ingress-values.yaml" nginx oci://ghcr.io/nginxinc/charts/nginx-ingress -n ingress --version 0.18.0
 
 echo "Re-enabling NGINX snippets..."
-kubectl patch deployment nginx-nginx-ingress-controller -n ingress \
-  --type=json \
-  -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"-enable-snippets=true"}]'
+if ! kubectl get deployment nginx-nginx-ingress-controller -n ingress \
+    -o jsonpath='{.spec.template.spec.containers[0].args}' | grep -q -- '-enable-snippets=true'; then
+  kubectl patch deployment nginx-nginx-ingress-controller -n ingress \
+    --type=json \
+    -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"-enable-snippets=true"}]'
+else
+  echo "Snippets already enabled, skipping."
+fi
 
 echo "Installing Gateway API CRDs (required by Linkerd)..."
 kubectl apply -f https://github.com/kubernetes-sigs/gateway-api/releases/download/v1.2.1/standard-install.yaml
