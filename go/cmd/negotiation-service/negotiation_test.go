@@ -53,6 +53,22 @@ func TestTransition_TerminatedIsDeadEnd(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidTransition)
 }
 
+func TestNegotiation_Clone(t *testing.T) {
+	n := newNegotiation("VU", "urn:example:consumer:1", []byte(`{"@id":"offer-1"}`))
+	c := n.clone()
+
+	assert.Equal(t, n.ProviderPid, c.ProviderPid)
+	assert.JSONEq(t, string(n.Offer), string(c.Offer))
+
+	// Mutating the clone's Offer (or the clone's state) must never reach
+	// back into the original - the whole point of clone() is that Store's
+	// cached copy and every Get caller's copy are fully independent.
+	c.Offer[2] = 'X'
+	c.State = StateTerminated
+	assert.NotEqual(t, string(n.Offer), string(c.Offer))
+	assert.Equal(t, StateRequested, n.State)
+}
+
 func TestTransition_OfferedRequestedLoop(t *testing.T) {
 	// Both REQUESTED and OFFERED can be reached repeatedly before AGREED -
 	// counter-request/counter-offer, per the state machine doc.

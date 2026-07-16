@@ -320,9 +320,10 @@ func negotiationVerificationHandler(w http.ResponseWriter, r *http.Request) {
 
 // negotiationTerminationHandler implements
 // POST /internal/v1/negotiations/{id}/termination (Contract Negotiation
-// Termination Message) -> TERMINATED. Valid from any non-terminal state, no
-// reason required (the DSP message's `reason` field is accepted but only
-// logged - negotiation-service doesn't persist it).
+// Termination Message) -> TERMINATED. Valid from any state including
+// FINALIZED (per the spec, termination needs no explanation and is valid
+// from any state) - only TERMINATED itself is a dead end, enforced by
+// transition() regardless of the `from` list passed here.
 func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)

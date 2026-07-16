@@ -39,7 +39,7 @@ func main() {
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()
 
-	store = NewStore(etcdClient, party)
+	store = NewStore(etcdClient)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)

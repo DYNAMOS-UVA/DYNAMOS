@@ -23,7 +23,7 @@ func TestStore_Integration(t *testing.T) {
 	client := etcd.GetEtcdClient(endpoint)
 	defer client.Close()
 
-	store := NewStore(client, "VU")
+	store := NewStore(client)
 
 	n := newNegotiation("VU", "urn:example:consumer:1", []byte(`{"@id":"offer-1"}`))
 	require.NoError(t, store.Save(n))
@@ -48,7 +48,7 @@ func TestStore_Integration_HotPathServesFromCache(t *testing.T) {
 	client := etcd.GetEtcdClient(endpoint)
 	defer client.Close()
 
-	store := NewStore(client, "VU")
+	store := NewStore(client)
 	n := newNegotiation("VU", "urn:example:consumer:2", []byte(`{}`))
 	require.NoError(t, store.Save(n))
 
@@ -63,14 +63,14 @@ func TestStore_Integration_HotPathServesFromCache(t *testing.T) {
 	other := newNegotiation("VU", "urn:example:consumer:2", []byte(`{}`))
 	other.ProviderPid = n.ProviderPid
 	require.NoError(t, other.transition(StateTerminated, StateRequested))
-	require.NoError(t, etcd.SaveStructToEtcd(client, negotiationKey("VU", n.ProviderPid), other))
+	require.NoError(t, etcd.SaveStructToEtcd(client, negotiationKey(n.ProviderPid), other))
 
 	stale, err := store.Get(n.ProviderPid)
 	require.NoError(t, err)
 	assert.Equal(t, StateRequested, stale.State, "cache should still serve the pre-mutation value")
 
 	// A fresh Store (empty cache) sees the real, current etcd value.
-	fresh := NewStore(client, "VU")
+	fresh := NewStore(client)
 	live, err := fresh.Get(n.ProviderPid)
 	require.NoError(t, err)
 	assert.Equal(t, StateTerminated, live.State)
