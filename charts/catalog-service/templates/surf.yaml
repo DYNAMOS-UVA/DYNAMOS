@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service-surf
+  namespace: {{ .Values.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-service-surf
+  template:
+    metadata:
+      labels:
+        app: catalog-service-surf
+      annotations:
+        "linkerd.io/inject" : enabled
+    spec:
+      containers:
+      - name: catalog-service-surf
+        image: {{ .Values.dockerArtifactAccount }}/catalog-service:{{ .Values.branchNameTag }}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATA_STEWARD_NAME
+          value: SURF
+        - name: ETCD_ENDPOINTS
+          value: {{ .Values.etcdEndpoints | quote }}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service-surf
+  namespace: {{ .Values.Namespace }}
+spec:
+  selector:
+    app: catalog-service-surf
+  ports:
+    - name: http-catalog-service-api
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

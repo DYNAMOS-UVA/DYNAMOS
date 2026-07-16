@@ -1,0 +1,7 @@
+Namespace: dsp-connector
+branchNameTag: "main"
+dockerArtifactAccount: "dynamos1"
+catalogServiceURL:
+  uva: "http://catalog-service-uva.catalog-service.svc.cluster.local:8080"
+  vu: "http://catalog-service-vu.catalog-service.svc.cluster.local:8080"
+  surf: "http://catalog-service-surf.catalog-service.svc.cluster.local:8080"

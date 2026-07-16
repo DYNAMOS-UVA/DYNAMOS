@@ -1,0 +1,68 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dsp-connector-uva
+  namespace: {{ .Values.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: dsp-connector-uva
+  template:
+    metadata:
+      labels:
+        app: dsp-connector-uva
+      annotations:
+        "linkerd.io/inject" : enabled
+    spec:
+      containers:
+      - name: dsp-connector-uva
+        image: {{ .Values.dockerArtifactAccount }}/dsp-connector:{{ .Values.branchNameTag }}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATA_STEWARD_NAME
+          value: UVA
+        - name: CATALOG_SERVICE_URL
+          value: {{ .Values.catalogServiceURL.uva | quote }}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: dsp-connector-uva
+  namespace: {{ .Values.Namespace }}
+spec:
+  selector:
+    app: dsp-connector-uva
+  ports:
+    - name: http-dsp-connector-api
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP
+
+---
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: dsp-connector-uva-ingress
+  namespace: {{ .Values.Namespace }}
+  annotations:
+    nginx.ingress.kubernetes.io/service-upstream: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+  - host: dsp-uva.dsp-connector.svc.cluster.local
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/api/v1"
+        backend:
+          service:
+            name: dsp-connector-uva
+            port:
+              number: 8080

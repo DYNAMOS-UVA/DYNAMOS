@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 )
@@ -19,6 +20,10 @@ func healthHandler(w http.ResponseWriter, r *http.Request) {
 
 func main() {
 	defer logger.Sync()
+
+	if v := os.Getenv("CATALOG_SERVICE_URL"); v != "" {
+		catalogServiceURL = v
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
