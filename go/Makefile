@@ -10,6 +10,8 @@ dynamos := sidecar policy-enforcer orchestrator agent api-gateway
 dsp_connector := dsp-connector
 # Catalog data microservice (etcd-backed, read-through, internal API for dsp-connector)
 catalog_service := catalog-service
+# Contract negotiation state machine microservice, etcd-backed, internal API for dsp-connector
+negotiation_service := negotiation-service
 # Docker Hub account for tagging and pushing images
 dockerhub_account := dynamos1
 
@@ -83,16 +85,21 @@ $(dsp_connector): prepare
 $(catalog_service): prepare
 	$(call build_and_push)
 
+# Same as above, but for the negotiation-service microservice
+$(negotiation_service): prepare
+	$(call build_and_push)
+
 # Build and push all services
-all: $(dynamos) $(sql_microservices) $(dsp_connector) $(catalog_service)
+all: $(dynamos) $(sql_microservices) $(dsp_connector) $(catalog_service) $(negotiation_service)
 # Convenience aliases to build specific groups of services
 dynamos: $(dynamos)
 sql_microservices: $(sql_microservices)
 dsp_connector: $(dsp_connector)
 catalog_service: $(catalog_service)
+negotiation_service: $(negotiation_service)
 
 # Declare targets that are not associated with (physical) files.
 # This prevents make from being misled by a file or directory that has the same name as the target.
 # For example, if a file named "prepare" or "proto" exists, make might think it doesn't need to run the commands again.
 # By declaring them .PHONY, make will always execute the associated commands when these targets are invoked.
-.PHONY: all prepare proto $(dynamos) $(sql_microservices) $(dsp_connector) $(catalog_service)
+.PHONY: all prepare proto $(dynamos) $(sql_microservices) $(dsp_connector) $(catalog_service) $(negotiation_service)
