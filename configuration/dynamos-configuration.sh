@@ -43,6 +43,7 @@ namespace_chart="${charts_path}/namespaces"
 orchestrator_chart="${charts_path}/orchestrator"
 agents_chart="${charts_path}/agents"
 catalog_service_chart="${charts_path}/catalog-service"
+dsp_connector_chart="${charts_path}/dsp-connector"
 ttp_chart="${charts_path}/thirdparty"
 api_gw_chart="${charts_path}/api-gateway"
 
@@ -152,6 +153,11 @@ sleep 1
 
 echo "Installing catalog-service layer..."
 helm upgrade -i -f "${catalog_service_chart}/values.yaml" catalog-service ${catalog_service_chart}
+
+sleep 1
+
+echo "Installing dsp-connector layer..."
+helm upgrade -i -f "${dsp_connector_chart}/values.yaml" dsp-connector ${dsp_connector_chart}
 
 sleep 1
 
