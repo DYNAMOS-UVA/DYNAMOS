@@ -31,6 +31,10 @@ func main() {
 		logger.Sugar().Fatal("DATA_STEWARD_NAME not set")
 	}
 
+	if v := os.Getenv("ETCD_ENDPOINTS"); v != "" {
+		etcdEndpoints = v
+	}
+
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()
 

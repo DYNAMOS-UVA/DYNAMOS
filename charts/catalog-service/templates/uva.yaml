@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: catalog-service-uva
+  namespace: {{ .Values.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: catalog-service-uva
+  template:
+    metadata:
+      labels:
+        app: catalog-service-uva
+      annotations:
+        "linkerd.io/inject" : enabled
+    spec:
+      containers:
+      - name: catalog-service-uva
+        image: {{ .Values.dockerArtifactAccount }}/catalog-service:{{ .Values.branchNameTag }}
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATA_STEWARD_NAME
+          value: UVA
+        - name: ETCD_ENDPOINTS
+          value: {{ .Values.etcdEndpoints | quote }}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: catalog-service-uva
+  namespace: {{ .Values.Namespace }}
+spec:
+  selector:
+    app: catalog-service-uva
+  ports:
+    - name: http-catalog-service-api
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

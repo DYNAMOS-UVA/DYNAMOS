@@ -42,6 +42,7 @@ core_chart="${charts_path}/core"
 namespace_chart="${charts_path}/namespaces"
 orchestrator_chart="${charts_path}/orchestrator"
 agents_chart="${charts_path}/agents"
+catalog_service_chart="${charts_path}/catalog-service"
 ttp_chart="${charts_path}/thirdparty"
 api_gw_chart="${charts_path}/api-gateway"
 
@@ -146,6 +147,11 @@ sleep 1
 
 echo "Installing agents layer..."
 helm upgrade -i -f "${agents_chart}/values.yaml" agents ${agents_chart}
+
+sleep 1
+
+echo "Installing catalog-service layer..."
+helm upgrade -i -f "${catalog_service_chart}/values.yaml" catalog-service ${catalog_service_chart}
 
 sleep 1
 
