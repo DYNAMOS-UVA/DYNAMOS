@@ -99,7 +99,7 @@ func startFixtureNegotiationService(t *testing.T) fixtureNegotiationService {
 }
 
 func offerBody(offerID string) string {
-	return `{"@context":["https://w3id.org/dspace/2025/1/context.jsonld"],"@type":"ContractRequestMessage","consumerPid":"urn:example:consumer:1","offer":{"@type":"Offer","@id":"` + offerID + `","target":"urn:dynamos:dataset:VU:wageGap","permission":[{"action":"use"}]}}`
+	return `{"@context":["https://w3id.org/dspace/2025/1/context.jsonld"],"@type":"ContractRequestMessage","consumerPid":"urn:example:consumer:1","callbackAddress":"https://consumer.example.com/callback","offer":{"@type":"Offer","@id":"` + offerID + `","target":"urn:dynamos:dataset:VU:wageGap","permission":[{"action":"use"}]}}`
 }
 
 func TestNegotiationRequestInitHandler_ValidOffer(t *testing.T) {
@@ -155,6 +155,26 @@ func TestNegotiationRequestInitHandler_MissingConsumerPid(t *testing.T) {
 	startFixtureNegotiationService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/request", bytes.NewBufferString(`{"offer":{"@id":"urn:dynamos:offer:VU:GUID"}}`))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	rec := httptest.NewRecorder()
+
+	negotiationRequestInitHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "invalid-request", ne.Code)
+}
+
+// TestNegotiationRequestInitHandler_MissingProviderPidAndCallback covers the
+// ContractRequestMessage schema's oneOf{callbackAddress, providerPid} - a
+// message with neither must be rejected as invalid, not silently accepted.
+func TestNegotiationRequestInitHandler_MissingProviderPidAndCallback(t *testing.T) {
+	startFixtureCatalogService(t)
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/request",
+		bytes.NewBufferString(`{"consumerPid":"urn:example:consumer:1","offer":{"@id":"urn:dynamos:offer:VU:GUID"}}`))
 	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
 	rec := httptest.NewRecorder()
 
@@ -417,7 +437,8 @@ func TestNegotiationTerminationHandler_MissingAuthorization(t *testing.T) {
 func TestNegotiationTerminationHandler_WrongParticipant(t *testing.T) {
 	startFixtureNegotiationService(t)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/termination", bytes.NewBufferString(`{}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/termination",
+		bytes.NewBufferString(`{"consumerPid":"urn:example:consumer:1"}`))
 	req.Header.Set("Authorization", "someone-else@example.com")
 	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
 	rec := httptest.NewRecorder()
@@ -430,10 +451,11 @@ func TestNegotiationTerminationHandler_WrongParticipant(t *testing.T) {
 	assert.Equal(t, "not-found", ne.Code)
 }
 
-// TestNegotiationTerminationHandler_EmptyBodyStillWorks confirms a bare `{}`
-// (no consumerPid) is still accepted - consumerPid is optional here, unlike
-// on the events endpoint, so this must not regress.
-func TestNegotiationTerminationHandler_EmptyBodyStillWorks(t *testing.T) {
+// TestNegotiationTerminationHandler_MissingConsumerPid: consumerPid is
+// required per the ContractNegotiationTerminationMessage schema - a bare
+// `{}` must now be rejected (this used to be accepted; tightened to match
+// the spec).
+func TestNegotiationTerminationHandler_MissingConsumerPid(t *testing.T) {
 	startFixtureNegotiationService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/termination", bytes.NewBufferString(`{}`))
@@ -443,12 +465,15 @@ func TestNegotiationTerminationHandler_EmptyBodyStillWorks(t *testing.T) {
 
 	negotiationTerminationHandler(rec, req)
 
-	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "invalid-request", ne.Code)
 }
 
-// TestNegotiationTerminationHandler_ConsumerPidMismatch: consumerPid is
-// optional in the termination body, but if given, it must match the
-// negotiation being terminated.
+// TestNegotiationTerminationHandler_ConsumerPidMismatch: a well-formed
+// termination whose consumerPid doesn't match the negotiation's own record
+// must be rejected, not silently applied to the wrong consumerPid.
 func TestNegotiationTerminationHandler_ConsumerPidMismatch(t *testing.T) {
 	startFixtureNegotiationService(t)
 
@@ -503,6 +528,28 @@ func TestNegotiationRequestHandler_UnknownOffer(t *testing.T) {
 	var ne negotiationError
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
 	assert.Equal(t, "invalid-offer", ne.Code)
+}
+
+// TestNegotiationRequestHandler_ProviderPidMismatch covers self-consistency
+// between the body's providerPid and the URL's - a real DSP counter-request
+// echoes providerPid in the body per the schema, and it must agree with the
+// path it's actually being sent to.
+func TestNegotiationRequestHandler_ProviderPidMismatch(t *testing.T) {
+	startFixtureCatalogService(t)
+	startFixtureNegotiationService(t)
+
+	body := `{"@context":["https://w3id.org/dspace/2025/1/context.jsonld"],"@type":"ContractRequestMessage","consumerPid":"urn:example:consumer:1","providerPid":"urn:dynamos:negotiation:VU:some-other-negotiation","offer":{"@type":"Offer","@id":"urn:dynamos:offer:VU:GUID","target":"urn:dynamos:dataset:VU:wageGap","permission":[{"action":"use"}]}}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/request", bytes.NewBufferString(body))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationRequestHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "invalid-request", ne.Code)
 }
 
 func TestNegotiationRequestHandler_UnprovisionedParticipant(t *testing.T) {
@@ -616,7 +663,7 @@ func TestNegotiationLifecycle_FullPath(t *testing.T) {
 	require.NoError(t, json.Unmarshal(verifyRec.Body.Bytes(), &verified))
 	assert.Equal(t, "VERIFIED", verified.State)
 
-	terminateReq := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/"+providerPid+"/termination", bytes.NewBufferString(`{}`))
+	terminateReq := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/"+providerPid+"/termination", bytes.NewBufferString(`{"consumerPid":"urn:example:consumer:1"}`))
 	terminateReq.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
 	terminateReq.SetPathValue("providerPid", providerPid)
 	terminateRec := httptest.NewRecorder()

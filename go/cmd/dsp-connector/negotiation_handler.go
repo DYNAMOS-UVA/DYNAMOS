@@ -20,15 +20,18 @@ var (
 )
 
 // contractRequestMessage mirrors the DSP ContractRequestMessage shape
-// (docs/negotiation/spec-reference/negotiation/contract-request-message-schema.json) -
-// only the fields this handler actually acts on. @context/@type/providerPid/
-// callbackAddress round-trip in the real DSP message but aren't read here
-// (the path providerPid drives every operation, and there's no outbound
-// callback dispatch in this slice), so they're left undecoded rather than
-// carried as dead struct fields.
+// (docs/negotiation/spec-reference/negotiation/contract-request-message-schema.json).
+// @context/@type still round-trip in the real DSP message but aren't decoded
+// here (this handler never re-emits them). ProviderPid/CallbackAddress *are*
+// decoded, purely to enforce the schema's oneOf{callbackAddress, providerPid}
+// requirement in decodeContractRequest - the path providerPid still drives
+// every operation on the counter-request endpoint, and there's no outbound
+// callback dispatch in this slice, so neither value is otherwise acted on.
 type contractRequestMessage struct {
-	ConsumerPid string          `json:"consumerPid"`
-	Offer       json.RawMessage `json:"offer"`
+	ConsumerPid     string          `json:"consumerPid"`
+	ProviderPid     string          `json:"providerPid"`
+	CallbackAddress string          `json:"callbackAddress"`
+	Offer           json.RawMessage `json:"offer"`
 }
 
 // negotiationEventMessage mirrors the DSP ContractNegotiationEventMessage
@@ -45,9 +48,11 @@ type negotiationEventMessage struct {
 
 // negotiationTerminationMessage mirrors the DSP
 // ContractNegotiationTerminationMessage shape - only the fields this handler
-// acts on (see contractRequestMessage's comment). Code/reason are accepted
-// (so a well-formed message round-trips) but only logged - negotiation-service
-// doesn't persist termination reasons, same as its own internal API.
+// acts on (see contractRequestMessage's comment). consumerPid is required
+// per the schema (negotiationTerminationHandler enforces it); code/reason
+// are accepted (so a well-formed message round-trips) but only logged -
+// negotiation-service doesn't persist termination reasons, same as its own
+// internal API.
 type negotiationTerminationMessage struct {
 	ConsumerPid string        `json:"consumerPid"`
 	Code        string        `json:"code,omitempty"`
@@ -200,6 +205,9 @@ func decodeContractRequest(r *http.Request) (*contractRequestMessage, error) {
 	if msg.ConsumerPid == "" {
 		return nil, fmt.Errorf("%w: consumerPid is required", ErrInvalidOffer)
 	}
+	if msg.ProviderPid == "" && msg.CallbackAddress == "" {
+		return nil, fmt.Errorf("%w: either providerPid or callbackAddress is required", ErrInvalidOffer)
+	}
 	if len(msg.Offer) == 0 {
 		return nil, fmt.Errorf("%w: offer is required", ErrInvalidOffer)
 	}
@@ -297,6 +305,10 @@ func negotiationRequestHandler(w http.ResponseWriter, r *http.Request) {
 	msg, err := decodeContractRequest(r)
 	if err != nil {
 		writeNegotiationError(w, http.StatusBadRequest, providerPid, "", "invalid-request", err.Error())
+		return
+	}
+	if msg.ProviderPid != "" && msg.ProviderPid != providerPid {
+		writeNegotiationError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-request", "providerPid does not match the URL.")
 		return
 	}
 
@@ -436,8 +448,8 @@ func negotiationVerificationHandler(w http.ResponseWriter, r *http.Request) {
 
 // negotiationTerminationHandler implements
 // POST /negotiations/:providerPid/termination. code/reason are logged only.
-// consumerPid is optional in the termination body (a bare `{}` is valid, same
-// as before) but if present, it must match the negotiation being terminated.
+// consumerPid is required per the schema, and must match the negotiation
+// being terminated.
 func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -459,6 +471,10 @@ func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if msg.ConsumerPid == "" {
+		writeNegotiationError(w, http.StatusBadRequest, providerPid, "", "invalid-request", "consumerPid is required")
+		return
+	}
 	if msg.Code != "" || len(msg.Reason) > 0 {
 		logger.Sugar().Infow("Negotiation termination requested", "providerPid", providerPid, "code", msg.Code, "reason", msg.Reason)
 	}
@@ -472,7 +488,7 @@ func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 		mapNegotiationServiceError(w, providerPid, msg.ConsumerPid, err)
 		return
 	}
-	if msg.ConsumerPid != "" && msg.ConsumerPid != existing.ConsumerPid {
+	if msg.ConsumerPid != existing.ConsumerPid {
 		writeNegotiationError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-request", "consumerPid does not match this negotiation.")
 		return
 	}
