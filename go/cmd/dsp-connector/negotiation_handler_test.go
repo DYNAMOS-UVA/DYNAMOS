@@ -11,22 +11,42 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// fixtureNegotiationService is the *string pair startFixtureNegotiationService
+// hands back so a test can reach into the fixture's in-memory negotiation the
+// same way TestNegotiationLifecycle_FullPath already pokes state directly -
+// participant lets a test simulate "this negotiation belongs to someone
+// else" (or "this negotiation's owner has since been de-provisioned")
+// without needing a second fixture negotiation.
+type fixtureNegotiationService struct {
+	state       *string
+	participant *string
+}
+
 // startFixtureNegotiationService stands in for a real negotiation-service,
 // same shape as catalog_handler_test.go's startFixtureCatalogService. Tracks
 // one in-memory negotiation so lifecycle handlers behave consistently
-// across a test.
-func startFixtureNegotiationService(t *testing.T) *string {
+// across a test. participant defaults to the same identity every other
+// fixture (startFixtureCatalogService) and most tests authenticate as.
+func startFixtureNegotiationService(t *testing.T) fixtureNegotiationService {
 	t.Helper()
 
 	state := "REQUESTED"
+	participant := "jorrit.stutterheim@cloudnation.nl"
 	const providerPid = "urn:dynamos:negotiation:VU:fixture-1"
 	const consumerPid = "urn:example:consumer:1"
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/internal/v1/negotiations", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Participant string `json:"participant"`
+		}
+		json.NewDecoder(r.Body).Decode(&body)
+		if body.Participant != "" {
+			participant = body.Participant
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
-		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "state": state})
+		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "participant": participant, "state": state})
 	})
 	mux.HandleFunc("/internal/v1/negotiations/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -36,13 +56,13 @@ func startFixtureNegotiationService(t *testing.T) *string {
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "state": state})
+		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "participant": participant, "state": state})
 	})
 	mux.HandleFunc("/internal/v1/negotiations/{id}/request", func(w http.ResponseWriter, r *http.Request) {
 		state = "REQUESTED"
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "state": state})
+		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "participant": participant, "state": state})
 	})
 	mux.HandleFunc("/internal/v1/negotiations/{id}/events", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -57,25 +77,25 @@ func startFixtureNegotiationService(t *testing.T) *string {
 		}
 		state = body.EventType
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "state": state})
+		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "participant": participant, "state": state})
 	})
 	mux.HandleFunc("/internal/v1/negotiations/{id}/agreement/verification", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		state = "VERIFIED"
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "state": state})
+		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "participant": participant, "state": state})
 	})
 	mux.HandleFunc("/internal/v1/negotiations/{id}/termination", func(w http.ResponseWriter, r *http.Request) {
 		state = "TERMINATED"
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "state": state})
+		json.NewEncoder(w).Encode(map[string]string{"providerPid": providerPid, "consumerPid": consumerPid, "participant": participant, "state": state})
 	})
 
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 	negotiationServiceURL = ts.URL
-	return &state
+	return fixtureNegotiationService{state: &state, participant: &participant}
 }
 
 func offerBody(offerID string) string {
@@ -202,6 +222,25 @@ func TestNegotiationGetHandler_MissingAuthorization(t *testing.T) {
 	assert.Equal(t, "missing-authorization", ne.Code)
 }
 
+// TestNegotiationGetHandler_WrongParticipant covers the IDOR gap: an
+// authenticated participant who never opened this negotiation must get the
+// same 404 as an unknown providerPid, not a peek at someone else's state.
+func TestNegotiationGetHandler_WrongParticipant(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1", nil)
+	req.Header.Set("Authorization", "someone-else@example.com")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationGetHandler(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "not-found", ne.Code)
+}
+
 func TestNegotiationEventsHandler_WrongEventType(t *testing.T) {
 	startFixtureNegotiationService(t)
 
@@ -253,6 +292,62 @@ func TestNegotiationEventsHandler_EmptyBody(t *testing.T) {
 	assert.Equal(t, "invalid-request", ne.Code, "an empty/missing body must be reported as invalid-request, not invalid-event-type")
 }
 
+func TestNegotiationEventsHandler_MissingConsumerPid(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/events",
+		bytes.NewBufferString(`{"eventType":"ACCEPTED"}`))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationEventsHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "invalid-request", ne.Code)
+}
+
+// TestNegotiationEventsHandler_ConsumerPidMismatch: a well-formed ACCEPTED
+// event whose consumerPid doesn't match the negotiation's own record must be
+// rejected, not silently accepted against the wrong consumerPid.
+func TestNegotiationEventsHandler_ConsumerPidMismatch(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/events",
+		bytes.NewBufferString(`{"eventType":"ACCEPTED","consumerPid":"urn:example:consumer:wrong"}`))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationEventsHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "invalid-request", ne.Code)
+}
+
+// TestNegotiationEventsHandler_WrongParticipant covers the IDOR gap for the
+// events endpoint - same expectation as the Get handler's equivalent test.
+func TestNegotiationEventsHandler_WrongParticipant(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/events",
+		bytes.NewBufferString(`{"eventType":"ACCEPTED","consumerPid":"urn:example:consumer:1"}`))
+	req.Header.Set("Authorization", "someone-else@example.com")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationEventsHandler(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "not-found", ne.Code)
+}
+
 func TestNegotiationEventsHandler_MissingAuthorization(t *testing.T) {
 	startFixtureNegotiationService(t)
 
@@ -284,6 +379,24 @@ func TestNegotiationVerificationHandler_MissingAuthorization(t *testing.T) {
 	assert.Equal(t, "missing-authorization", ne.Code)
 }
 
+// TestNegotiationVerificationHandler_WrongParticipant covers the IDOR gap
+// for the verification endpoint - same expectation as Get's equivalent test.
+func TestNegotiationVerificationHandler_WrongParticipant(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/agreement/verification", bytes.NewBufferString(`{}`))
+	req.Header.Set("Authorization", "someone-else@example.com")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationVerificationHandler(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "not-found", ne.Code)
+}
+
 func TestNegotiationTerminationHandler_MissingAuthorization(t *testing.T) {
 	startFixtureNegotiationService(t)
 
@@ -297,6 +410,60 @@ func TestNegotiationTerminationHandler_MissingAuthorization(t *testing.T) {
 	var ne negotiationError
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
 	assert.Equal(t, "missing-authorization", ne.Code)
+}
+
+// TestNegotiationTerminationHandler_WrongParticipant covers the IDOR gap for
+// the termination endpoint - same expectation as Get's equivalent test.
+func TestNegotiationTerminationHandler_WrongParticipant(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/termination", bytes.NewBufferString(`{}`))
+	req.Header.Set("Authorization", "someone-else@example.com")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationTerminationHandler(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "not-found", ne.Code)
+}
+
+// TestNegotiationTerminationHandler_EmptyBodyStillWorks confirms a bare `{}`
+// (no consumerPid) is still accepted - consumerPid is optional here, unlike
+// on the events endpoint, so this must not regress.
+func TestNegotiationTerminationHandler_EmptyBodyStillWorks(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/termination", bytes.NewBufferString(`{}`))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationTerminationHandler(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestNegotiationTerminationHandler_ConsumerPidMismatch: consumerPid is
+// optional in the termination body, but if given, it must match the
+// negotiation being terminated.
+func TestNegotiationTerminationHandler_ConsumerPidMismatch(t *testing.T) {
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/termination",
+		bytes.NewBufferString(`{"consumerPid":"urn:example:consumer:wrong"}`))
+	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationTerminationHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "invalid-request", ne.Code)
 }
 
 // TestNegotiationRequestHandler_ValidCounterRequest exercises the
@@ -340,7 +507,12 @@ func TestNegotiationRequestHandler_UnknownOffer(t *testing.T) {
 
 func TestNegotiationRequestHandler_UnprovisionedParticipant(t *testing.T) {
 	startFixtureCatalogService(t)
-	startFixtureNegotiationService(t)
+	fixture := startFixtureNegotiationService(t)
+	// Simulate a participant who owns this negotiation (opened it while
+	// provisioned) but has since lost catalog access - a legitimate case,
+	// unlike a stranger probing someone else's providerPid (which the
+	// ownership check below rejects before ever reaching catalog validation).
+	*fixture.participant = "nobody@example.com"
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/request",
 		bytes.NewBufferString(offerBody("urn:dynamos:offer:VU:GUID")))
@@ -358,6 +530,28 @@ func TestNegotiationRequestHandler_UnprovisionedParticipant(t *testing.T) {
 	// through (the bug this replaces: init and counter-request handlers used
 	// to disagree on this message for the identical underlying condition).
 	assert.Equal(t, []string{"Catalog not provisioned for this requester."}, ne.Reason)
+}
+
+// TestNegotiationRequestHandler_WrongParticipant covers the actual IDOR case
+// TestNegotiationRequestHandler_UnprovisionedParticipant above no longer
+// can: a stranger who never owned this negotiation must be told it doesn't
+// exist, not given a catalog-validation error that confirms it does.
+func TestNegotiationRequestHandler_WrongParticipant(t *testing.T) {
+	startFixtureCatalogService(t)
+	startFixtureNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/request",
+		bytes.NewBufferString(offerBody("urn:dynamos:offer:VU:GUID")))
+	req.Header.Set("Authorization", "someone-else@example.com")
+	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
+	rec := httptest.NewRecorder()
+
+	negotiationRequestHandler(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "not-found", ne.Code)
 }
 
 func TestNegotiationRequestHandler_MissingAuthorization(t *testing.T) {
@@ -388,7 +582,7 @@ func TestNegotiationRequestHandler_WrongMethod(t *testing.T) {
 // negotiation-service's own httptest lifecycle test one layer up the stack.
 func TestNegotiationLifecycle_FullPath(t *testing.T) {
 	startFixtureCatalogService(t)
-	statePtr := startFixtureNegotiationService(t)
+	fixture := startFixtureNegotiationService(t)
 
 	createReq := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/request", bytes.NewBufferString(offerBody("urn:dynamos:offer:VU:GUID")))
 	createReq.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
@@ -402,7 +596,7 @@ func TestNegotiationLifecycle_FullPath(t *testing.T) {
 	// Move the fixture to OFFERED (a real dsp-connector never does this
 	// directly - the Provider sends the Offer out-of-band - but the fixture
 	// needs it to exercise the events/ACCEPTED transition below).
-	*statePtr = "OFFERED"
+	*fixture.state = "OFFERED"
 
 	acceptReq := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/"+providerPid+"/events",
 		bytes.NewBufferString(`{"eventType":"ACCEPTED","providerPid":"`+providerPid+`","consumerPid":"urn:example:consumer:1"}`))

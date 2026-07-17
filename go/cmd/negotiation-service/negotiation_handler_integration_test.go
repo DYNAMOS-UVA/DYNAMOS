@@ -59,7 +59,7 @@ func TestNegotiationsCollectionHandler_Create(t *testing.T) {
 	wireHandlerTestStore(t)
 
 	rec := doRequest(negotiationsCollectionHandler, http.MethodPost, "/internal/v1/negotiations", "",
-		`{"consumerPid":"urn:example:consumer:1","offer":{"@id":"offer-1"}}`)
+		`{"consumerPid":"urn:example:consumer:1","participant":"consumer@example.com","offer":{"@id":"offer-1"}}`)
 
 	require.Equal(t, http.StatusCreated, rec.Code)
 	n := decodeNegotiation(t, rec)
@@ -77,11 +77,21 @@ func TestNegotiationsCollectionHandler_MissingConsumerPid(t *testing.T) {
 	assert.Equal(t, "missing-consumer-pid", decodeInternalError(t, rec).Code)
 }
 
+func TestNegotiationsCollectionHandler_MissingParticipant(t *testing.T) {
+	wireHandlerTestStore(t)
+
+	rec := doRequest(negotiationsCollectionHandler, http.MethodPost, "/internal/v1/negotiations", "",
+		`{"consumerPid":"urn:example:consumer:1","offer":{"@id":"offer-1"}}`)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "missing-participant", decodeInternalError(t, rec).Code)
+}
+
 func TestNegotiationsCollectionHandler_MissingOffer(t *testing.T) {
 	wireHandlerTestStore(t)
 
 	rec := doRequest(negotiationsCollectionHandler, http.MethodPost, "/internal/v1/negotiations", "",
-		`{"consumerPid":"urn:example:consumer:1"}`)
+		`{"consumerPid":"urn:example:consumer:1","participant":"consumer@example.com"}`)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, "missing-offer", decodeInternalError(t, rec).Code)
@@ -104,7 +114,7 @@ func TestNegotiationLifecycle_FullPath(t *testing.T) {
 	wireHandlerTestStore(t)
 
 	createRec := doRequest(negotiationsCollectionHandler, http.MethodPost, "/internal/v1/negotiations", "",
-		`{"consumerPid":"urn:example:consumer:1","offer":{"@id":"offer-1"}}`)
+		`{"consumerPid":"urn:example:consumer:1","participant":"consumer@example.com","offer":{"@id":"offer-1"}}`)
 	require.Equal(t, http.StatusCreated, createRec.Code)
 	id := decodeNegotiation(t, createRec).ProviderPid
 
@@ -147,7 +157,7 @@ func TestNegotiationEventsHandler_WrongEventType(t *testing.T) {
 	wireHandlerTestStore(t)
 
 	createRec := doRequest(negotiationsCollectionHandler, http.MethodPost, "/internal/v1/negotiations", "",
-		`{"consumerPid":"urn:example:consumer:2","offer":{"@id":"offer-1"}}`)
+		`{"consumerPid":"urn:example:consumer:2","participant":"consumer@example.com","offer":{"@id":"offer-1"}}`)
 	id := decodeNegotiation(t, createRec).ProviderPid
 
 	rec := doRequest(negotiationEventsHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/events", id,
@@ -161,7 +171,7 @@ func TestNegotiationAgreementHandler_WrongSourceState(t *testing.T) {
 	wireHandlerTestStore(t)
 
 	createRec := doRequest(negotiationsCollectionHandler, http.MethodPost, "/internal/v1/negotiations", "",
-		`{"consumerPid":"urn:example:consumer:3","offer":{"@id":"offer-1"}}`)
+		`{"consumerPid":"urn:example:consumer:3","participant":"consumer@example.com","offer":{"@id":"offer-1"}}`)
 	id := decodeNegotiation(t, createRec).ProviderPid
 
 	// Still REQUESTED - agreement is only valid from ACCEPTED.

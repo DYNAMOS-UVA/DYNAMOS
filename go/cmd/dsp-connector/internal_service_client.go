@@ -16,12 +16,19 @@ type internalServiceErrorBody struct {
 
 // mapInternalServiceError decodes resp's {code,error} body and returns the
 // sentinel codeMap[code] maps to, or a generic error wrapping the raw
-// code/message - for an unparseable body, or a code with no codeMap entry.
-// Shared by catalog_client.go and negotiation_client.go's own error-mapping
-// functions, which otherwise duplicated this decode-then-switch verbatim.
-func mapInternalServiceError(serviceName string, resp *http.Response, codeMap map[string]error) error {
+// code/message for a code with no codeMap entry. If the body doesn't decode
+// at all, statusFallback[resp.StatusCode] is used instead (pass nil if the
+// caller has none) - a mangled/unexpected body shouldn't downgrade a real
+// 404/409 into a generic upstream failure when the status code alone still
+// tells us which sentinel applies. Shared by catalog_client.go and
+// negotiation_client.go's own error-mapping functions, which otherwise
+// duplicated this decode-then-switch verbatim.
+func mapInternalServiceError(serviceName string, resp *http.Response, codeMap map[string]error, statusFallback map[int]error) error {
 	var body internalServiceErrorBody
 	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		if sentinel, ok := statusFallback[resp.StatusCode]; ok {
+			return sentinel
+		}
 		return fmt.Errorf("%s returned %d with unparseable body: %w", serviceName, resp.StatusCode, err)
 	}
 

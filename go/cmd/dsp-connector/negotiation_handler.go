@@ -116,8 +116,12 @@ func writeNegotiationAck(w http.ResponseWriter, status int, n *negotiationRecord
 // state transition, 502 for anything else (network/upstream failure -
 // mirrors catalog_handler.go's own "upstream-error" convention).
 func mapNegotiationServiceError(w http.ResponseWriter, providerPid, consumerPid string, err error) {
-	if errors.Is(err, ErrNegotiationNotFound) {
-		logger.Sugar().Infow("Negotiation not found", "providerPid", providerPid, "error", err)
+	if errors.Is(err, ErrNegotiationNotFound) || errors.Is(err, ErrNegotiationForbidden) {
+		// A non-owner gets the exact same response as a truly unknown
+		// providerPid - if ErrNegotiationForbidden got its own status/code,
+		// probing IDs would let a caller distinguish "not yours" from
+		// "doesn't exist", leaking which providerPids are real.
+		logger.Sugar().Infow("Negotiation not found or not owned by requester", "providerPid", providerPid, "error", err)
 		writeNegotiationError(w, http.StatusNotFound, providerPid, consumerPid, "not-found", "Contract negotiation not found.")
 		return
 	}
@@ -239,7 +243,7 @@ func negotiationRequestInitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, err := createNegotiation(msg.ConsumerPid, msg.Offer)
+	n, err := createNegotiation(msg.ConsumerPid, participant, msg.Offer)
 	if err != nil {
 		mapNegotiationServiceError(w, "", msg.ConsumerPid, err)
 		return
@@ -256,13 +260,18 @@ func negotiationGetHandler(w http.ResponseWriter, r *http.Request) {
 
 	providerPid := r.PathValue("providerPid")
 
-	if _, ok := participantFromRequest(r); !ok {
+	participant, ok := participantFromRequest(r)
+	if !ok {
 		writeNegotiationError(w, http.StatusUnauthorized, providerPid, "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
 		return
 	}
 
 	n, err := fetchNegotiation(providerPid)
 	if err != nil {
+		mapNegotiationServiceError(w, providerPid, "", err)
+		return
+	}
+	if err := checkNegotiationOwnership(n, participant); err != nil {
 		mapNegotiationServiceError(w, providerPid, "", err)
 		return
 	}
@@ -288,6 +297,16 @@ func negotiationRequestHandler(w http.ResponseWriter, r *http.Request) {
 	msg, err := decodeContractRequest(r)
 	if err != nil {
 		writeNegotiationError(w, http.StatusBadRequest, providerPid, "", "invalid-request", err.Error())
+		return
+	}
+
+	existing, err := fetchNegotiation(providerPid)
+	if err != nil {
+		mapNegotiationServiceError(w, providerPid, msg.ConsumerPid, err)
+		return
+	}
+	if err := checkNegotiationOwnership(existing, participant); err != nil {
+		mapNegotiationServiceError(w, providerPid, msg.ConsumerPid, err)
 		return
 	}
 
@@ -328,7 +347,8 @@ func negotiationEventsHandler(w http.ResponseWriter, r *http.Request) {
 
 	providerPid := r.PathValue("providerPid")
 
-	if _, ok := participantFromRequest(r); !ok {
+	participant, ok := participantFromRequest(r)
+	if !ok {
 		writeNegotiationError(w, http.StatusUnauthorized, providerPid, "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
 		return
 	}
@@ -348,8 +368,26 @@ func negotiationEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if msg.ConsumerPid == "" {
+		writeNegotiationError(w, http.StatusBadRequest, providerPid, "", "invalid-request", "consumerPid is required")
+		return
+	}
 	if msg.EventType != "ACCEPTED" {
 		writeNegotiationError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-event-type", "Only eventType ACCEPTED may be sent by a Consumer to this endpoint.")
+		return
+	}
+
+	existing, err := fetchNegotiation(providerPid)
+	if err != nil {
+		mapNegotiationServiceError(w, providerPid, msg.ConsumerPid, err)
+		return
+	}
+	if err := checkNegotiationOwnership(existing, participant); err != nil {
+		mapNegotiationServiceError(w, providerPid, msg.ConsumerPid, err)
+		return
+	}
+	if msg.ConsumerPid != existing.ConsumerPid {
+		writeNegotiationError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-request", "consumerPid does not match this negotiation.")
 		return
 	}
 
@@ -371,8 +409,19 @@ func negotiationVerificationHandler(w http.ResponseWriter, r *http.Request) {
 
 	providerPid := r.PathValue("providerPid")
 
-	if _, ok := participantFromRequest(r); !ok {
+	participant, ok := participantFromRequest(r)
+	if !ok {
 		writeNegotiationError(w, http.StatusUnauthorized, providerPid, "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
+		return
+	}
+
+	existing, err := fetchNegotiation(providerPid)
+	if err != nil {
+		mapNegotiationServiceError(w, providerPid, "", err)
+		return
+	}
+	if err := checkNegotiationOwnership(existing, participant); err != nil {
+		mapNegotiationServiceError(w, providerPid, "", err)
 		return
 	}
 
@@ -387,6 +436,8 @@ func negotiationVerificationHandler(w http.ResponseWriter, r *http.Request) {
 
 // negotiationTerminationHandler implements
 // POST /negotiations/:providerPid/termination. code/reason are logged only.
+// consumerPid is optional in the termination body (a bare `{}` is valid, same
+// as before) but if present, it must match the negotiation being terminated.
 func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -394,7 +445,8 @@ func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 
 	providerPid := r.PathValue("providerPid")
 
-	if _, ok := participantFromRequest(r); !ok {
+	participant, ok := participantFromRequest(r)
+	if !ok {
 		writeNegotiationError(w, http.StatusUnauthorized, providerPid, "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
 		return
 	}
@@ -409,6 +461,20 @@ func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg.Code != "" || len(msg.Reason) > 0 {
 		logger.Sugar().Infow("Negotiation termination requested", "providerPid", providerPid, "code", msg.Code, "reason", msg.Reason)
+	}
+
+	existing, err := fetchNegotiation(providerPid)
+	if err != nil {
+		mapNegotiationServiceError(w, providerPid, msg.ConsumerPid, err)
+		return
+	}
+	if err := checkNegotiationOwnership(existing, participant); err != nil {
+		mapNegotiationServiceError(w, providerPid, msg.ConsumerPid, err)
+		return
+	}
+	if msg.ConsumerPid != "" && msg.ConsumerPid != existing.ConsumerPid {
+		writeNegotiationError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-request", "consumerPid does not match this negotiation.")
+		return
 	}
 
 	n, err := terminateNegotiation(providerPid)

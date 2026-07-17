@@ -31,7 +31,7 @@ var catalogServiceErrorCodes = map[string]error{
 // error, or a generic wrapped error for anything unexpected (etcd I/O
 // failures on catalog-service's side, network errors, etc).
 func errorFromResponse(resp *http.Response) error {
-	return mapInternalServiceError("catalog-service", resp, catalogServiceErrorCodes)
+	return mapInternalServiceError("catalog-service", resp, catalogServiceErrorCodes, nil)
 }
 
 // fetchCatalog calls catalog-service's GET /internal/v1/catalog (issue #28)

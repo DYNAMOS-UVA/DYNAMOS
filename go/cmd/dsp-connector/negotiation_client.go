@@ -18,13 +18,32 @@ var (
 	ErrNegotiationInvalidTransition = errors.New("negotiation-service: invalid state transition")
 )
 
+// ErrNegotiationForbidden signals that the authenticated participant is not
+// the one who owns this negotiation. mapNegotiationServiceError maps it to
+// the exact same 404 response as ErrNegotiationNotFound - a non-owner must
+// not be able to tell "doesn't exist" apart from "exists, but isn't yours".
+var ErrNegotiationForbidden = errors.New("negotiation-service: participant does not own this negotiation")
+
 // negotiationRecord is the subset of negotiation-service's Negotiation JSON
 // this connector actually needs to build a DSP ContractNegotiation ack -
-// Party/Offer/Agreement/timestamps stay internal to negotiation-service.
+// Offer/Agreement/timestamps stay internal to negotiation-service.
 type negotiationRecord struct {
 	ProviderPid string `json:"providerPid"`
 	ConsumerPid string `json:"consumerPid"`
+	Participant string `json:"participant"`
 	State       string `json:"state"`
+}
+
+// checkNegotiationOwnership reports ErrNegotiationForbidden if participant
+// isn't the one who opened n - every provider endpoint but the initiating
+// request must call this on the fetched/looked-up record before acting on
+// it, or any authenticated participant could read or drive someone else's
+// negotiation just by knowing its providerPid.
+func checkNegotiationOwnership(n *negotiationRecord, participant string) error {
+	if n.Participant != participant {
+		return ErrNegotiationForbidden
+	}
+	return nil
 }
 
 var negotiationServiceClient = &http.Client{Timeout: 5 * time.Second}
@@ -37,11 +56,22 @@ var negotiationServiceErrorCodes = map[string]error{
 	"invalid-transition":    ErrNegotiationInvalidTransition,
 }
 
+// negotiationServiceStatusFallback: if negotiation-service's error body ever
+// fails to decode (a proxy/gateway substituting its own error page, an etcd
+// timeout mid-response, etc), fall back on the HTTP status it still sent
+// rather than treating every unparseable body the same as an opaque 502 -
+// a genuine 404/409 shouldn't get miscategorized as "upstream-error" just
+// because its body wasn't the {code,error} shape.
+var negotiationServiceStatusFallback = map[int]error{
+	http.StatusNotFound: ErrNegotiationNotFound,
+	http.StatusConflict: ErrNegotiationInvalidTransition,
+}
+
 // negotiationErrorFromResponse maps a non-2xx negotiation-service response to
 // a sentinel error, or a generic wrapped error for anything unexpected (etcd
 // I/O failures on negotiation-service's side, network errors, etc).
 func negotiationErrorFromResponse(resp *http.Response) error {
-	return mapInternalServiceError("negotiation-service", resp, negotiationServiceErrorCodes)
+	return mapInternalServiceError("negotiation-service", resp, negotiationServiceErrorCodes, negotiationServiceStatusFallback)
 }
 
 // postNegotiation POSTs body (JSON-encoded, may be nil) to path on
@@ -96,9 +126,10 @@ func fetchNegotiation(providerPid string) (*negotiationRecord, error) {
 // createNegotiation calls negotiation-service's
 // POST /internal/v1/negotiations - the initiating Contract Request Message
 // (no providerPid yet), backing DSP POST /negotiations/request.
-func createNegotiation(consumerPid string, offer json.RawMessage) (*negotiationRecord, error) {
+func createNegotiation(consumerPid, participant string, offer json.RawMessage) (*negotiationRecord, error) {
 	return postNegotiation("/internal/v1/negotiations", map[string]any{
 		"consumerPid": consumerPid,
+		"participant": participant,
 		"offer":       offer,
 	})
 }
