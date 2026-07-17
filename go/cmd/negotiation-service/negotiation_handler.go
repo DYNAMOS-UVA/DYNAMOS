@@ -245,6 +245,16 @@ func negotiationEventsHandler(w http.ResponseWriter, r *http.Request) {
 		if !transitionOrError(w, n, StateFinalized, StateVerified) {
 			return
 		}
+		// Write the negotiated agreement into policy-enforcer's own etcd key
+		// before persisting FINALIZED (issue #47) - if this fails, the
+		// negotiation must stay VERIFIED (n is never saved below) so the
+		// caller can retry FINALIZED rather than believe access was granted
+		// when it wasn't.
+		if err := applyPolicyEnforcement(n); err != nil {
+			logger.Sugar().Errorw("failed to apply policy enforcement for finalized negotiation", "id", n.ProviderPid, "party", n.Party, "error", err)
+			writeInternalError(w, http.StatusInternalServerError, "policy-enforcement-failed", "failed to record the negotiated agreement for policy enforcement")
+			return
+		}
 	default:
 		writeInternalError(w, http.StatusBadRequest, "invalid-event-type", "eventType must be ACCEPTED or FINALIZED")
 		return
