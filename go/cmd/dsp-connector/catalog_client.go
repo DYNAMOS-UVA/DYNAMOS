@@ -18,32 +18,20 @@ var (
 	ErrDatasetNotFound     = errors.New("catalog-service: dataset not found")
 )
 
-// internalErrorResponse mirrors catalog-service's own internalError shape
-// (go/cmd/catalog-service/catalog_handler.go).
-type internalErrorResponse struct {
-	Code  string `json:"code"`
-	Error string `json:"error"`
-}
-
 var catalogServiceClient = &http.Client{Timeout: 5 * time.Second}
+
+// catalogServiceErrorCodes maps catalog-service's internal-API error codes
+// (go/cmd/catalog-service/catalog_handler.go) to this package's sentinels.
+var catalogServiceErrorCodes = map[string]error{
+	"participant-not-found": ErrParticipantNotFound,
+	"dataset-not-found":     ErrDatasetNotFound,
+}
 
 // errorFromResponse maps a non-200 catalog-service response to a sentinel
 // error, or a generic wrapped error for anything unexpected (etcd I/O
 // failures on catalog-service's side, network errors, etc).
 func errorFromResponse(resp *http.Response) error {
-	var ie internalErrorResponse
-	if err := json.NewDecoder(resp.Body).Decode(&ie); err != nil {
-		return fmt.Errorf("catalog-service returned %d with unparseable body: %w", resp.StatusCode, err)
-	}
-
-	switch ie.Code {
-	case "participant-not-found":
-		return ErrParticipantNotFound
-	case "dataset-not-found":
-		return ErrDatasetNotFound
-	default:
-		return fmt.Errorf("catalog-service returned %d (%s): %s", resp.StatusCode, ie.Code, ie.Error)
-	}
+	return mapInternalServiceError("catalog-service", resp, catalogServiceErrorCodes, nil)
 }
 
 // fetchCatalog calls catalog-service's GET /internal/v1/catalog (issue #28)

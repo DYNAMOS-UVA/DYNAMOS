@@ -24,6 +24,9 @@ func main() {
 	if v := os.Getenv("CATALOG_SERVICE_URL"); v != "" {
 		catalogServiceURL = v
 	}
+	if v := os.Getenv("NEGOTIATION_SERVICE_URL"); v != "" {
+		negotiationServiceURL = v
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
@@ -35,6 +38,17 @@ func main() {
 	// Dataset Request Message ack - the Catalog Protocol's second required
 	// endpoint alongside /catalog/request (see catalogDatasetHandler).
 	mux.HandleFunc(apiVersion+"/catalog/datasets/{id}", catalogDatasetHandler)
+
+	// Contract Negotiation provider endpoints (T2.3, docs/negotiation/dsp-negotiation-state-machine.md).
+	// "/negotiations/request" is a literal segment, so Go 1.22 ServeMux
+	// matches it ahead of the "/negotiations/{providerPid}" wildcard below
+	// for that exact path.
+	mux.HandleFunc(apiVersion+"/negotiations/request", negotiationRequestInitHandler)
+	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}", negotiationGetHandler)
+	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/request", negotiationRequestHandler)
+	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/events", negotiationEventsHandler)
+	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/agreement/verification", negotiationVerificationHandler)
+	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/termination", negotiationTerminationHandler)
 
 	logger.Sugar().Infow("Starting dsp-connector http server", "port", port, "apiVersion", apiVersion)
 	if err := http.ListenAndServe(port, mux); err != nil {

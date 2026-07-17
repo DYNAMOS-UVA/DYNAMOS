@@ -8,10 +8,11 @@ import (
 )
 
 func TestNewNegotiation(t *testing.T) {
-	n := newNegotiation("VU", "urn:example:consumer:1", []byte(`{"@id":"offer-1"}`))
+	n := newNegotiation("VU", "urn:example:consumer:1", "consumer@example.com", []byte(`{"@id":"offer-1"}`))
 
 	assert.Equal(t, "VU", n.Party)
 	assert.Equal(t, "urn:example:consumer:1", n.ConsumerPid)
+	assert.Equal(t, "consumer@example.com", n.Participant)
 	assert.Equal(t, StateRequested, n.State)
 	assert.Contains(t, n.ProviderPid, "urn:dynamos:negotiation:VU:")
 	assert.False(t, n.CreatedAt.IsZero())
@@ -19,7 +20,7 @@ func TestNewNegotiation(t *testing.T) {
 }
 
 func TestTransition_ValidPath(t *testing.T) {
-	n := newNegotiation("VU", "urn:example:consumer:1", []byte(`{}`))
+	n := newNegotiation("VU", "urn:example:consumer:1", "consumer@example.com", []byte(`{}`))
 
 	require.NoError(t, n.transition(StateOffered, StateRequested, StateOffered))
 	assert.Equal(t, StateOffered, n.State)
@@ -38,7 +39,7 @@ func TestTransition_ValidPath(t *testing.T) {
 }
 
 func TestTransition_RejectsWrongSourceState(t *testing.T) {
-	n := newNegotiation("VU", "urn:example:consumer:1", []byte(`{}`))
+	n := newNegotiation("VU", "urn:example:consumer:1", "consumer@example.com", []byte(`{}`))
 
 	err := n.transition(StateVerified, StateAgreed)
 	assert.ErrorIs(t, err, ErrInvalidTransition)
@@ -46,7 +47,7 @@ func TestTransition_RejectsWrongSourceState(t *testing.T) {
 }
 
 func TestTransition_TerminatedIsDeadEnd(t *testing.T) {
-	n := newNegotiation("VU", "urn:example:consumer:1", []byte(`{}`))
+	n := newNegotiation("VU", "urn:example:consumer:1", "consumer@example.com", []byte(`{}`))
 	require.NoError(t, n.transition(StateTerminated, StateRequested))
 
 	err := n.transition(StateOffered, StateRequested, StateOffered, StateTerminated)
@@ -54,7 +55,7 @@ func TestTransition_TerminatedIsDeadEnd(t *testing.T) {
 }
 
 func TestNegotiation_Clone(t *testing.T) {
-	n := newNegotiation("VU", "urn:example:consumer:1", []byte(`{"@id":"offer-1"}`))
+	n := newNegotiation("VU", "urn:example:consumer:1", "consumer@example.com", []byte(`{"@id":"offer-1"}`))
 	c := n.clone()
 
 	assert.Equal(t, n.ProviderPid, c.ProviderPid)
@@ -72,7 +73,7 @@ func TestNegotiation_Clone(t *testing.T) {
 func TestTransition_OfferedRequestedLoop(t *testing.T) {
 	// Both REQUESTED and OFFERED can be reached repeatedly before AGREED -
 	// counter-request/counter-offer, per the state machine doc.
-	n := newNegotiation("VU", "urn:example:consumer:1", []byte(`{}`))
+	n := newNegotiation("VU", "urn:example:consumer:1", "consumer@example.com", []byte(`{}`))
 
 	require.NoError(t, n.transition(StateOffered, StateRequested, StateOffered))
 	require.NoError(t, n.transition(StateRequested, StateOffered))

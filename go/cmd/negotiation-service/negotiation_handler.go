@@ -67,9 +67,13 @@ func transitionOrError(w http.ResponseWriter, n *Negotiation, to State, from ...
 
 // negotiationRequestBody is the shared body shape for the two Contract
 // Request Message endpoints (initiating and counter) - `offer` carries the
-// (possibly countered) ODRL offer, opaque to negotiation-service.
+// (possibly countered) ODRL offer, opaque to negotiation-service. Participant
+// is only meaningful (and required) on the initiating endpoint - a
+// counter-request never changes who owns the negotiation, so it's ignored
+// there.
 type negotiationRequestBody struct {
 	ConsumerPid string          `json:"consumerPid"`
+	Participant string          `json:"participant"`
 	Offer       json.RawMessage `json:"offer"`
 }
 
@@ -92,12 +96,16 @@ func negotiationsCollectionHandler(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, http.StatusBadRequest, "missing-consumer-pid", "consumerPid is required")
 		return
 	}
+	if body.Participant == "" {
+		writeInternalError(w, http.StatusBadRequest, "missing-participant", "participant is required")
+		return
+	}
 	if len(body.Offer) == 0 {
 		writeInternalError(w, http.StatusBadRequest, "missing-offer", "offer is required")
 		return
 	}
 
-	n := newNegotiation(party, body.ConsumerPid, body.Offer)
+	n := newNegotiation(party, body.ConsumerPid, body.Participant, body.Offer)
 	if !saveOrError(w, n) {
 		return
 	}

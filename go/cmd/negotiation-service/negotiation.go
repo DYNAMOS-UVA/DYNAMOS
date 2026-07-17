@@ -40,6 +40,13 @@ type Negotiation struct {
 	ProviderPid string          `json:"providerPid"`
 	ConsumerPid string          `json:"consumerPid"`
 	Party       string          `json:"party"`
+	// Participant is the requesting participant's identity (dsp-connector's
+	// Authorization-header value, see participantFromRequest in
+	// go/cmd/dsp-connector/catalog_handler.go) captured at creation time.
+	// negotiation-service never interprets it - it's stored opaque purely so
+	// dsp-connector can check, on every later provider-endpoint call, that
+	// the caller is the same participant who opened this negotiation.
+	Participant string          `json:"participant"`
 	State       State           `json:"state"`
 	Offer       json.RawMessage `json:"offer,omitempty"`
 	Agreement   json.RawMessage `json:"agreement,omitempty"`
@@ -49,12 +56,13 @@ type Negotiation struct {
 
 // newNegotiation builds a fresh negotiation in REQUESTED - the initiating
 // Contract Request Message (no providerPid yet).
-func newNegotiation(party, consumerPid string, offer json.RawMessage) *Negotiation {
+func newNegotiation(party, consumerPid, participant string, offer json.RawMessage) *Negotiation {
 	now := time.Now().UTC()
 	return &Negotiation{
 		ProviderPid: fmt.Sprintf("urn:dynamos:negotiation:%s:%s", party, uuid.New().String()),
 		ConsumerPid: consumerPid,
 		Party:       party,
+		Participant: participant,
 		State:       StateRequested,
 		Offer:       offer,
 		CreatedAt:   now,
