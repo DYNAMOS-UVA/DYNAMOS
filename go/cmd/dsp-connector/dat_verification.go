@@ -95,6 +95,14 @@ func resolveDIDWeb(did string) (crypto.PublicKey, error) {
 
 // didWebDocumentURL is the pure did:web -> URL mapping, split out from
 // resolveDIDWeb so it's unit-testable without live HTTP.
+//
+// Scheme is didWebScheme, not a hardcoded "https" - the DID spec mandates
+// https, and that's the default (config_prod.go). Local/TCK builds
+// (config_local.go) set it to "http": there's no real TLS anywhere in this
+// demo/harness setup, and MVD's own local deployment makes the identical
+// call for the identical reason (edc.iam.did.web.use.https: "false" in its
+// issuerservice ConfigMap) - precedent from the same upstream project this
+// whole identity layer is borrowed from, not a one-off shortcut.
 func didWebDocumentURL(did string) (string, error) {
 	const prefix = "did:web:"
 	if !strings.HasPrefix(did, prefix) {
@@ -110,7 +118,7 @@ func didWebDocumentURL(did string) (string, error) {
 	}
 
 	if len(segments) == 1 {
-		return fmt.Sprintf("https://%s/.well-known/did.json", host), nil
+		return fmt.Sprintf("%s://%s/.well-known/did.json", didWebScheme, host), nil
 	}
 
 	pathSegments := make([]string, len(segments)-1)
@@ -121,7 +129,7 @@ func didWebDocumentURL(did string) (string, error) {
 		}
 		pathSegments[i] = decoded
 	}
-	return fmt.Sprintf("https://%s/%s/did.json", host, strings.Join(pathSegments, "/")), nil
+	return fmt.Sprintf("%s://%s/%s/did.json", didWebScheme, host, strings.Join(pathSegments, "/")), nil
 }
 
 // jwk is the minimal subset of RFC 7517 needed for the two key types MVD's
