@@ -63,7 +63,7 @@ func fetchDatasetConfigOrError(w http.ResponseWriter, participant, datasetID str
 	return nil, false
 }
 
-// internalCatalogHandler implements GET /internal/v1/catalog?participant={email}
+// internalCatalogHandler implements GET /internal/v1/catalog?participant={participant}
 // (issue #28) - the internal counterpart to dsp-connector's DSP-facing
 // catalogRequestHandler, backed by live etcd data instead of a static config.
 func internalCatalogHandler(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +99,7 @@ func internalCatalogHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 // internalDatasetHandler implements
-// GET /internal/v1/catalog/datasets/{id}?participant={email} (issue #28),
+// GET /internal/v1/catalog/datasets/{id}?participant={participant} (issue #28),
 // returning the same RootDataset shape dsp-connector's own dataset endpoint
 // already returns today.
 func internalDatasetHandler(w http.ResponseWriter, r *http.Request) {

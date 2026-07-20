@@ -1,0 +1,19 @@
+{
+  "@context": [
+    "https://www.w3.org/ns/did/v1"
+  ],
+  "id": "did:web:localhost%3A9999",
+  "verificationMethod": [
+    {
+      "controller": "did:web:localhost%3A9999",
+      "id": "did:web:localhost%3A9999#key-1",
+      "publicKeyJwk": {
+        "crv": "P-256",
+        "kty": "EC",
+        "x": "92xmQ6wkC2EqJ6g3JbXh2eaR6VZDgNrFS_ZbIjghBOE",
+        "y": "Th2Q_dFFMCl1ObR6ottliEdASqtSjUe9BnpBgv2i5GE"
+      },
+      "type": "JsonWebKey2020"
+    }
+  ]
+}

@@ -35,10 +35,12 @@ func errorFromResponse(resp *http.Response) error {
 }
 
 // fetchCatalog calls catalog-service's GET /internal/v1/catalog (issue #28)
-// for participantEmail, replacing the old catalog.LoadConfig + BuildCatalog
-// path (issue #9) now that catalog data lives in etcd, not a static file.
-func fetchCatalog(participantEmail string) (*catalog.Catalog, error) {
-	reqURL := fmt.Sprintf("%s/internal/v1/catalog?participant=%s", catalogServiceURL, url.QueryEscape(participantEmail))
+// for participant (an email for a non-DSP-adjacent caller, or a verified
+// DID for a real DSP request post-#56 - see dat_verification.go), replacing
+// the old catalog.LoadConfig + BuildCatalog path (issue #9) now that catalog
+// data lives in etcd, not a static file.
+func fetchCatalog(participant string) (*catalog.Catalog, error) {
+	reqURL := fmt.Sprintf("%s/internal/v1/catalog?participant=%s", catalogServiceURL, url.QueryEscape(participant))
 	resp, err := catalogServiceClient.Get(reqURL)
 	if err != nil {
 		return nil, fmt.Errorf("calling catalog-service: %w", err)
@@ -59,8 +61,8 @@ func fetchCatalog(participantEmail string) (*catalog.Catalog, error) {
 // fetchDataset calls catalog-service's
 // GET /internal/v1/catalog/datasets/{id} (issue #28), replacing the old
 // catalog.BuildDataset path (issue #22).
-func fetchDataset(participantEmail, datasetID string) (*catalog.RootDataset, error) {
-	reqURL := fmt.Sprintf("%s/internal/v1/catalog/datasets/%s?participant=%s", catalogServiceURL, url.PathEscape(datasetID), url.QueryEscape(participantEmail))
+func fetchDataset(participant, datasetID string) (*catalog.RootDataset, error) {
+	reqURL := fmt.Sprintf("%s/internal/v1/catalog/datasets/%s?participant=%s", catalogServiceURL, url.PathEscape(datasetID), url.QueryEscape(participant))
 	resp, err := catalogServiceClient.Get(reqURL)
 	if err != nil {
 		return nil, fmt.Errorf("calling catalog-service: %w", err)

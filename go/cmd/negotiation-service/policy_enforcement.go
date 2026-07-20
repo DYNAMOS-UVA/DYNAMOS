@@ -96,14 +96,19 @@ func urnLastSegment(urn string) string {
 	return urn
 }
 
-// writePolicyEnforcerRelation read-modify-writes Relations[consumerEmail]
+// writePolicyEnforcerRelation read-modify-writes Relations[participant]
 // into /policyEnforcer/agreements/{party} - the exact key and shape
 // policy-enforcer's generate_validation_response.go and catalog-service's
 // catalog_source.go already read live. Must never blind-put: this key holds
 // every other consumer's relation too (see store.go's own comment on this
 // same hazard, and cmd/orchestrator/etcd_config.go's mergeAgreementRelations
 // for the other writer of this key that had the identical problem).
-func writePolicyEnforcerRelation(etcdClient *clientv3.Client, party, consumerEmail string, rel api.Relation) error {
+//
+// participant is an email for a non-DSP relation, or a DID for one written
+// from a real DSP negotiation post-issue-#56 (see dsp-connector's
+// dat_verification.go) - this map has never assumed a single identity shape,
+// it's keyed by whatever string the caller was already using.
+func writePolicyEnforcerRelation(etcdClient *clientv3.Client, party, participant string, rel api.Relation) error {
 	key := "/policyEnforcer/agreements/" + party
 
 	var agreement api.Agreement
@@ -116,7 +121,7 @@ func writePolicyEnforcerRelation(etcdClient *clientv3.Client, party, consumerEma
 	if agreement.Relations == nil {
 		agreement.Relations = make(map[string]api.Relation)
 	}
-	agreement.Relations[consumerEmail] = rel
+	agreement.Relations[participant] = rel
 
 	payload, err := json.Marshal(agreement)
 	if err != nil {

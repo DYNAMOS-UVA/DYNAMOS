@@ -21,3 +21,9 @@ var negotiationServiceURL = "http://localhost:8092"
 // registers, so folding /api/v1 into it keeps this consistent with the
 // internal convention (see api-gateway) without deviating from the spec.
 var apiVersion = "/api/v1"
+
+// didWebScheme: no real TLS anywhere in local dev or the TCK harness, so
+// did:web resolution (dat_verification.go) uses plain http here. Same
+// relaxation MVD's own local deployment makes (edc.iam.did.web.use.https:
+// "false"), not a DYNAMOS-specific shortcut.
+var didWebScheme = "http"

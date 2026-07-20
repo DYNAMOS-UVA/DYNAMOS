@@ -25,3 +25,7 @@ var negotiationServiceURL = "http://negotiation-service.negotiation-service.svc.
 // registers, so folding /api/v1 into it keeps this consistent with the
 // internal convention (see api-gateway) without deviating from the spec.
 var apiVersion = "/api/v1"
+
+// didWebScheme: real did:web resolution (dat_verification.go) always uses
+// https in prod, per spec. Only local/TCK builds relax this (config_local.go).
+var didWebScheme = "https"

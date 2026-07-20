@@ -95,7 +95,7 @@ func TestCatalogRequestHandler_KnownParticipant(t *testing.T) {
 
 	body := `{"@context":["https://w3id.org/dspace/2025/1/context.jsonld"],"@type":"CatalogRequestMessage","filter":[]}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", bytes.NewBufferString(body))
-	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.Header.Set("Authorization", testAuthHeader("jorrit.stutterheim@cloudnation.nl"))
 	rec := httptest.NewRecorder()
 
 	catalogRequestHandler(rec, req)
@@ -114,7 +114,7 @@ func TestCatalogRequestHandler_EmptyBodyStillWorks(t *testing.T) {
 	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", nil)
-	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.Header.Set("Authorization", testAuthHeader("jorrit.stutterheim@cloudnation.nl"))
 	rec := httptest.NewRecorder()
 
 	catalogRequestHandler(rec, req)
@@ -126,7 +126,7 @@ func TestCatalogRequestHandler_UnknownParticipant(t *testing.T) {
 	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", bytes.NewBufferString("{}"))
-	req.Header.Set("Authorization", "nobody@example.com")
+	req.Header.Set("Authorization", testAuthHeader("nobody@example.com"))
 	rec := httptest.NewRecorder()
 
 	catalogRequestHandler(rec, req)
@@ -170,7 +170,7 @@ func TestCatalogDatasetHandler_KnownDataset(t *testing.T) {
 	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:wageGap", nil)
-	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.Header.Set("Authorization", testAuthHeader("jorrit.stutterheim@cloudnation.nl"))
 	req.SetPathValue("id", "urn:dynamos:dataset:VU:wageGap")
 	rec := httptest.NewRecorder()
 
@@ -189,7 +189,7 @@ func TestCatalogDatasetHandler_UnknownDataset(t *testing.T) {
 	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/catalog/datasets/urn:dynamos:dataset:VU:nonexistent", nil)
-	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.Header.Set("Authorization", testAuthHeader("jorrit.stutterheim@cloudnation.nl"))
 	req.SetPathValue("id", "urn:dynamos:dataset:VU:nonexistent")
 	rec := httptest.NewRecorder()
 
@@ -232,7 +232,7 @@ func TestCatalogRequestHandler_MalformedJSON(t *testing.T) {
 	startFixtureCatalogService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", bytes.NewBufferString("{not json"))
-	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.Header.Set("Authorization", testAuthHeader("jorrit.stutterheim@cloudnation.nl"))
 	rec := httptest.NewRecorder()
 
 	catalogRequestHandler(rec, req)
@@ -253,7 +253,7 @@ func TestCatalogRequestHandler_UpstreamError(t *testing.T) {
 	catalogServiceURL = ts.URL
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/catalog/request", bytes.NewBufferString("{}"))
-	req.Header.Set("Authorization", "jorrit.stutterheim@cloudnation.nl")
+	req.Header.Set("Authorization", testAuthHeader("jorrit.stutterheim@cloudnation.nl"))
 	rec := httptest.NewRecorder()
 
 	catalogRequestHandler(rec, req)
