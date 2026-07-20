@@ -42,17 +42,21 @@ func writeCatalogError(w http.ResponseWriter, status int, code string, reason st
 }
 
 // participantFromRequest extracts the requesting participant's identity from
-// the Authorization header. This is a deliberate placeholder for Phase 1:
-// the header value (after stripping an optional "Bearer " prefix) is used
-// directly as the participant identity DYNAMOS's Relation map is keyed by
-// (an email) - with no cryptographic verification. Real DSP identity/token
-// handling is out of scope for issue #10's "minimal/no validation" ask.
+// the Authorization header: the bearer token is verified as a real DAT
+// (issue #56, see dat_verification.go) - signature checked against the
+// holder DID it claims, participant email read from an embedded
+// DataStewardCredential - rather than trusted as a raw string.
 func participantFromRequest(r *http.Request) (string, bool) {
 	auth := r.Header.Get("Authorization")
 	if auth == "" {
 		return "", false
 	}
-	return strings.TrimPrefix(auth, "Bearer "), true
+	token := strings.TrimPrefix(auth, "Bearer ")
+	email, err := verifyDAT(token)
+	if err != nil {
+		return "", false
+	}
+	return email, true
 }
 
 // catalogRequestHandler implements POST /catalog/request per the DSP Catalog

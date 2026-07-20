@@ -8,6 +8,7 @@ require (
 	github.com/cenkalti/backoff/v4 v4.2.1
 	github.com/cheggaaa/pb/v3 v3.1.4
 	github.com/docker/docker v23.0.3+incompatible
+	github.com/golang-jwt/jwt/v5 v5.3.1
 	github.com/google/uuid v1.6.0
 	github.com/googollee/go-socket.io v1.7.0
 	github.com/gorilla/handlers v1.5.1
