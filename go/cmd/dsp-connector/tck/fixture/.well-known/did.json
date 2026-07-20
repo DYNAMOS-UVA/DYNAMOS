@@ -10,8 +10,8 @@
       "publicKeyJwk": {
         "crv": "P-256",
         "kty": "EC",
-        "x": "tdElVPf3BjX3A6skyIwGt2ohjPM37mSG97q4FT6J7ck",
-        "y": "iMTqiisfWuQfZXvfQk_bw5NBJNkCsMyoMzzFRTZaTqI"
+        "x": "92xmQ6wkC2EqJ6g3JbXh2eaR6VZDgNrFS_ZbIjghBOE",
+        "y": "Th2Q_dFFMCl1ObR6ottliEdASqtSjUe9BnpBgv2i5GE"
       },
       "type": "JsonWebKey2020"
     }

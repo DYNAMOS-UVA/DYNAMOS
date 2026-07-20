@@ -23,10 +23,10 @@ var (
 
 // buildConfig builds a *catalog.Config from already-fetched data - pure, so
 // it's unit-testable with plain fixtures, no etcd needed.
-func buildConfig(party string, agreement *api.Agreement, participantEmail string, datasets map[string]*pb.Dataset) (*catalog.Config, error) {
-	relation, ok := agreement.Relations[participantEmail]
+func buildConfig(party string, agreement *api.Agreement, participant string, datasets map[string]*pb.Dataset) (*catalog.Config, error) {
+	relation, ok := agreement.Relations[participant]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrParticipantNotFound, participantEmail)
+		return nil, fmt.Errorf("%w: %q", ErrParticipantNotFound, participant)
 	}
 
 	dsConfigs := make([]catalog.DatasetConfig, 0, len(relation.DataSets))
@@ -47,21 +47,21 @@ func buildConfig(party string, agreement *api.Agreement, participantEmail string
 		Party:         party,
 		AgentEndpoint: deriveAgentEndpoint(party),
 		Datasets:      dsConfigs,
-		Relations:     map[string]api.Relation{participantEmail: relation},
+		Relations:     map[string]api.Relation{participant: relation},
 	}, nil
 }
 
 // fetchConfig reads party's agreement + only the referenced datasets from
 // etcd, read-through per request (no cache - low-frequency discovery calls).
-func fetchConfig(etcdClient *clientv3.Client, party, participantEmail string) (*catalog.Config, error) {
+func fetchConfig(etcdClient *clientv3.Client, party, participant string) (*catalog.Config, error) {
 	var agreement api.Agreement
 	if _, err := etcd.GetAndUnmarshalJSON(etcdClient, "/policyEnforcer/agreements/"+party, &agreement); err != nil {
 		return nil, fmt.Errorf("fetching agreement for party %q: %w", party, err)
 	}
 
-	relation, ok := agreement.Relations[participantEmail]
+	relation, ok := agreement.Relations[participant]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrParticipantNotFound, participantEmail)
+		return nil, fmt.Errorf("%w: %q", ErrParticipantNotFound, participant)
 	}
 
 	datasets := make(map[string]*pb.Dataset, len(relation.DataSets))
@@ -73,20 +73,20 @@ func fetchConfig(etcdClient *clientv3.Client, party, participantEmail string) (*
 		datasets[name] = &ds
 	}
 
-	return buildConfig(party, &agreement, participantEmail, datasets)
+	return buildConfig(party, &agreement, participant, datasets)
 }
 
 // fetchDatasetConfig fetches only the one requested dataset, not every
 // dataset the relation references - avoids O(n) etcd reads per request.
-func fetchDatasetConfig(etcdClient *clientv3.Client, party, participantEmail, datasetID string) (*catalog.Config, error) {
+func fetchDatasetConfig(etcdClient *clientv3.Client, party, participant, datasetID string) (*catalog.Config, error) {
 	var agreement api.Agreement
 	if _, err := etcd.GetAndUnmarshalJSON(etcdClient, "/policyEnforcer/agreements/"+party, &agreement); err != nil {
 		return nil, fmt.Errorf("fetching agreement for party %q: %w", party, err)
 	}
 
-	relation, ok := agreement.Relations[participantEmail]
+	relation, ok := agreement.Relations[participant]
 	if !ok {
-		return nil, fmt.Errorf("%w: %q", ErrParticipantNotFound, participantEmail)
+		return nil, fmt.Errorf("%w: %q", ErrParticipantNotFound, participant)
 	}
 
 	name, ok := strings.CutPrefix(datasetID, fmt.Sprintf("urn:dynamos:dataset:%s:", party))
@@ -99,5 +99,5 @@ func fetchDatasetConfig(etcdClient *clientv3.Client, party, participantEmail, da
 		return nil, fmt.Errorf("fetching dataset %q: %w", name, err)
 	}
 
-	return buildConfig(party, &agreement, participantEmail, map[string]*pb.Dataset{name: &ds})
+	return buildConfig(party, &agreement, participant, map[string]*pb.Dataset{name: &ds})
 }

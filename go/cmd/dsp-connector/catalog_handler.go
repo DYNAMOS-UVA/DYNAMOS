@@ -44,19 +44,21 @@ func writeCatalogError(w http.ResponseWriter, status int, code string, reason st
 // participantFromRequest extracts the requesting participant's identity from
 // the Authorization header: the bearer token is verified as a real DAT
 // (issue #56, see dat_verification.go) - signature checked against the
-// holder DID it claims, participant email read from an embedded
-// DataStewardCredential - rather than trusted as a raw string.
+// holder DID it claims, that DID itself used as the identity - rather than
+// trusted as a raw string. DYNAMOS's Relations map (go/pkg/api/http.go)
+// accepts this alongside its existing email-keyed entries; see
+// dat_verification.go's file doc comment for why DID rather than a claim.
 func participantFromRequest(r *http.Request) (string, bool) {
 	auth := r.Header.Get("Authorization")
 	if auth == "" {
 		return "", false
 	}
 	token := strings.TrimPrefix(auth, "Bearer ")
-	email, err := verifyDAT(token)
+	participant, err := verifyDAT(token)
 	if err != nil {
 		return "", false
 	}
-	return email, true
+	return participant, true
 }
 
 // catalogRequestHandler implements POST /catalog/request per the DSP Catalog

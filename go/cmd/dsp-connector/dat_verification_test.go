@@ -18,28 +18,10 @@ func base64URLEncode(b []byte) string {
 
 const testHolderDID = "did:web:identityhub.consumer.svc.cluster.local%3A7083:alice"
 
-func credentialJWT(t *testing.T, vcType string, subject map[string]interface{}) string {
-	t.Helper()
-	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"vc": map[string]interface{}{
-			"type":              vcType,
-			"credentialSubject": subject,
-		},
-	})
-	// Embedded credentials are read for claims only (see file doc comment) -
-	// any key works here, signature is never checked.
-	signed, err := tok.SignedString([]byte("unused-in-this-test"))
-	if err != nil {
-		t.Fatalf("signing fixture credential: %v", err)
-	}
-	return signed
-}
-
-func datToken(t *testing.T, method jwt.SigningMethod, key crypto.PrivateKey, iss string, credentials []interface{}) string {
+func datToken(t *testing.T, method jwt.SigningMethod, key crypto.PrivateKey, iss string) string {
 	t.Helper()
 	tok := jwt.NewWithClaims(method, jwt.MapClaims{
-		"iss":         iss,
-		"credentials": credentials,
+		"iss": iss,
 	})
 	signed, err := tok.SignedString(key)
 	if err != nil {
@@ -60,61 +42,39 @@ func withFixtureResolver(t *testing.T, did string, pub crypto.PublicKey) {
 	t.Cleanup(func() { datResolver = original })
 }
 
-func TestVerifyDAT_ValidToken_ES256_ReturnsEmail(t *testing.T) {
+func TestVerifyDAT_ValidToken_ES256_ReturnsHolderDID(t *testing.T) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	withFixtureResolver(t, testHolderDID, &priv.PublicKey)
 
-	dsc := credentialJWT(t, dataStewardCredentialType, map[string]interface{}{"email": "alice@example.com"})
-	token := datToken(t, jwt.SigningMethodES256, priv, testHolderDID, []interface{}{dsc})
+	token := datToken(t, jwt.SigningMethodES256, priv, testHolderDID)
 
-	email, err := verifyDAT(token)
+	participant, err := verifyDAT(token)
 	if err != nil {
 		t.Fatalf("verifyDAT: %v", err)
 	}
-	if email != "alice@example.com" {
-		t.Errorf("got email %q, want alice@example.com", email)
+	if participant != testHolderDID {
+		t.Errorf("got participant %q, want %q", participant, testHolderDID)
 	}
 }
 
-func TestVerifyDAT_ValidToken_EdDSA_ReturnsEmail(t *testing.T) {
+func TestVerifyDAT_ValidToken_EdDSA_ReturnsHolderDID(t *testing.T) {
 	pub, priv, err := ed25519.GenerateKey(rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
 	withFixtureResolver(t, testHolderDID, pub)
 
-	dsc := credentialJWT(t, dataStewardCredentialType, map[string]interface{}{"email": "alice@example.com"})
-	token := datToken(t, jwt.SigningMethodEdDSA, priv, testHolderDID, []interface{}{dsc})
+	token := datToken(t, jwt.SigningMethodEdDSA, priv, testHolderDID)
 
-	email, err := verifyDAT(token)
+	participant, err := verifyDAT(token)
 	if err != nil {
 		t.Fatalf("verifyDAT: %v", err)
 	}
-	if email != "alice@example.com" {
-		t.Errorf("got email %q, want alice@example.com", email)
-	}
-}
-
-func TestVerifyDAT_MultipleCredentials_FindsDataSteward(t *testing.T) {
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		t.Fatal(err)
-	}
-	withFixtureResolver(t, testHolderDID, &priv.PublicKey)
-
-	membership := credentialJWT(t, "MembershipCredential", map[string]interface{}{"membership": "active"})
-	dsc := credentialJWT(t, dataStewardCredentialType, map[string]interface{}{"email": "alice@example.com"})
-	token := datToken(t, jwt.SigningMethodES256, priv, testHolderDID, []interface{}{membership, dsc})
-
-	email, err := verifyDAT(token)
-	if err != nil {
-		t.Fatalf("verifyDAT: %v", err)
-	}
-	if email != "alice@example.com" {
-		t.Errorf("got email %q, want alice@example.com", email)
+	if participant != testHolderDID {
+		t.Errorf("got participant %q, want %q", participant, testHolderDID)
 	}
 }
 
@@ -131,26 +91,27 @@ func TestVerifyDAT_WrongSigningKey_Fails(t *testing.T) {
 	// simulates a forged/replayed token.
 	withFixtureResolver(t, testHolderDID, &otherPriv.PublicKey)
 
-	dsc := credentialJWT(t, dataStewardCredentialType, map[string]interface{}{"email": "alice@example.com"})
-	token := datToken(t, jwt.SigningMethodES256, priv, testHolderDID, []interface{}{dsc})
+	token := datToken(t, jwt.SigningMethodES256, priv, testHolderDID)
 
 	if _, err := verifyDAT(token); err == nil {
 		t.Fatal("expected verification failure, got nil error")
 	}
 }
 
-func TestVerifyDAT_NoDataStewardCredential_Fails(t *testing.T) {
+func TestVerifyDAT_UnresolvableDID_Fails(t *testing.T) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Resolver only knows testHolderDID - a token claiming a different
+	// issuer DID should fail at resolution, before signature verification
+	// even runs.
 	withFixtureResolver(t, testHolderDID, &priv.PublicKey)
 
-	manufacturer := credentialJWT(t, "ManufacturerCredential", map[string]interface{}{"part_types": "non_critical"})
-	token := datToken(t, jwt.SigningMethodES256, priv, testHolderDID, []interface{}{manufacturer})
+	token := datToken(t, jwt.SigningMethodES256, priv, "did:web:unknown.example.com")
 
 	if _, err := verifyDAT(token); err == nil {
-		t.Fatal("expected failure (no DataStewardCredential present), got nil error")
+		t.Fatal("expected failure (unresolvable DID), got nil error")
 	}
 }
 
@@ -159,9 +120,7 @@ func TestVerifyDAT_MissingIssuerClaim_Fails(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tok := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
-		"credentials": []interface{}{},
-	})
+	tok := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{})
 	signed, err := tok.SignedString(priv)
 	if err != nil {
 		t.Fatal(err)

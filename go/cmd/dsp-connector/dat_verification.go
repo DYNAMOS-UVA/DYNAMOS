@@ -21,17 +21,31 @@ import (
 
 // DAT verification (issue #56): resolves the signing DID from a presented
 // token, verifies the token's signature against that DID's published key,
-// and extracts the participant's email from an embedded DataStewardCredential
-// claim (DYNAMOS's own credential type - minted during dataspace seeding
-// specifically to carry the email DYNAMOS's Relations map is keyed by;
-// MVD's stock MembershipCredential/ManufacturerCredential don't carry one).
+// and uses the verified DID itself as the participant's identity.
+//
+// Originally scoped to read an email claim from an embedded
+// DataStewardCredential (mirroring MVD's own ManufacturerCredential
+// pattern) - dropped once it turned out MVD's issuerservice hardcodes its
+// supported attestation types ("membership"/"manufacturer" only; a custom
+// "data_steward" type is rejected outright, "Unknown attestation type").
+// Minting a real third type means writing a new attestation-type provider
+// in MVD's own Java/Kotlin source, out of scope here. Using the DID
+// directly needs zero MVD changes and is what this file actually does.
+//
+// DYNAMOS's Relations map (go/pkg/api/http.go) stays keyed by whatever
+// string a caller was already using - existing non-DSP callers (unrelated
+// to this file entirely) keep using email, unchanged; a DSP-verified caller
+// now keys off its DID instead. Both live in the same map; nothing unifies
+// them as "the same real party" automatically - an operator seeding both an
+// email-keyed and a DID-keyed Relation for the same underlying party is an
+// ops concern, not a code one.
 //
 // Scope, deliberately: this verifies the presented token's own signature
-// (proves the caller holds the signing DID's private key) but does not
-// re-verify each embedded credential's own issuer signature - full DCP
-// Presentation Flow compliance (holder-binding proof, per-credential issuer
-// chains) is out of scope for #56, noted as a follow-up once a real
-// MVD-issued token's exact wire shape has actually been observed.
+// (proves the caller holds the signing DID's private key) - full DCP
+// Presentation Flow compliance (embedded-credential issuer-signature
+// chains, formal holder-binding proof) is out of scope for #56, noted as a
+// follow-up once a real MVD-issued token's exact wire shape has actually
+// been observed.
 
 var (
 	// ErrDATInvalid covers every verification failure - deliberately not
@@ -182,18 +196,10 @@ func (k *jwk) publicKey() (crypto.PublicKey, error) {
 	}
 }
 
-// dataStewardCredentialType is DYNAMOS's own DCP credential type, minted
-// during dataspace seeding (see wiki/decisions/ADR-009-simulated-dataspace-via-mvd.md
-// and the mvd-demo-dataspace-setup runbook), carrying the email claim
-// DYNAMOS's Relations map is keyed by - not part of MVD's own stock
-// credential set.
-const dataStewardCredentialType = "DataStewardCredential"
-
-// verifyDAT verifies a presented DAT and returns the participant email from
-// its embedded DataStewardCredential. The outer token's own signature is
-// verified cryptographically against its issuer DID; embedded credentials
-// are read for claims only, not signature-checked (see the file doc comment
-// for why).
+// verifyDAT verifies a presented DAT's signature against its own claimed
+// signing DID and, on success, returns that DID as the participant's
+// identity - see the file doc comment for why the identity is the DID
+// itself rather than a claim read out of an embedded credential.
 func verifyDAT(token string) (string, error) {
 	unverified, _, err := jwt.NewParser().ParseUnverified(token, jwt.MapClaims{})
 	if err != nil {
@@ -219,96 +225,6 @@ func verifyDAT(token string) (string, error) {
 	if err != nil || !verified.Valid {
 		return "", fmt.Errorf("%w: signature verification failed: %v", ErrDATInvalid, err)
 	}
-	verifiedClaims := verified.Claims.(jwt.MapClaims)
 
-	email, err := emailFromEmbeddedCredentials(verifiedClaims)
-	if err != nil {
-		return "", err
-	}
-	return email, nil
-}
-
-// emailFromEmbeddedCredentials walks the token's embedded credentials
-// looking for a DataStewardCredential, tolerating two possible wire shapes
-// (a DCP-style "vp.verifiableCredential[]", or a flatter top-level
-// "credentials"/"vc" array) - the exact shape MVD's own connector will send
-// on a live request hasn't been observed yet, see the file doc comment.
-func emailFromEmbeddedCredentials(claims jwt.MapClaims) (string, error) {
-	var rawCredentials []interface{}
-
-	if vp, ok := claims["vp"].(map[string]interface{}); ok {
-		if vcs, ok := vp["verifiableCredential"].([]interface{}); ok {
-			rawCredentials = vcs
-		}
-	}
-	if rawCredentials == nil {
-		if vcs, ok := claims["credentials"].([]interface{}); ok {
-			rawCredentials = vcs
-		}
-	}
-	if rawCredentials == nil {
-		if vcs, ok := claims["vc"].([]interface{}); ok {
-			rawCredentials = vcs
-		}
-	}
-
-	for _, raw := range rawCredentials {
-		credJWT, ok := raw.(string)
-		if !ok {
-			continue
-		}
-		email, ok := dataStewardEmailFromCredentialJWT(credJWT)
-		if ok {
-			return email, nil
-		}
-	}
-
-	return "", fmt.Errorf("%w: no DataStewardCredential found", ErrDATInvalid)
-}
-
-// dataStewardEmailFromCredentialJWT parses (without signature verification,
-// see file doc comment) one embedded credential JWT and returns its email
-// claim if it's a DataStewardCredential.
-func dataStewardEmailFromCredentialJWT(credJWT string) (string, bool) {
-	token, _, err := jwt.NewParser().ParseUnverified(credJWT, jwt.MapClaims{})
-	if err != nil {
-		return "", false
-	}
-	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return "", false
-	}
-
-	vc, ok := claims["vc"].(map[string]interface{})
-	if !ok {
-		vc = claims
-	}
-
-	if !credentialHasType(vc, dataStewardCredentialType) {
-		return "", false
-	}
-
-	subject, ok := vc["credentialSubject"].(map[string]interface{})
-	if !ok {
-		return "", false
-	}
-	email, ok := subject["email"].(string)
-	if !ok || email == "" {
-		return "", false
-	}
-	return email, true
-}
-
-func credentialHasType(vc map[string]interface{}, want string) bool {
-	switch t := vc["type"].(type) {
-	case string:
-		return t == want
-	case []interface{}:
-		for _, v := range t {
-			if s, ok := v.(string); ok && s == want {
-				return true
-			}
-		}
-	}
-	return false
+	return holderDID, nil
 }

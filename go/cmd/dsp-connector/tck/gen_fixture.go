@@ -23,11 +23,13 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-const (
-	fixtureDID   = "did:web:localhost%3A9999"
-	fixtureEmail = "jorrit.stutterheim@cloudnation.nl"
-	credType     = "DataStewardCredential"
-)
+// fixtureDID is the identity this fixture proves - the whole point of a DAT
+// (see dat_verification.go) is that the verified participant *is* this DID,
+// not a claim read out of it. Whoever seeds real etcd data for a live TCK
+// CAT-group run (a separate, pre-existing requirement - catalog-service
+// reads etcd, not config/example-catalog.json, since T1.4's migration off
+// static config) needs a Relations entry keyed by exactly this string.
+const fixtureDID = "did:web:localhost%3A9999"
 
 func main() {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -60,22 +62,8 @@ func main() {
 		panic(err)
 	}
 
-	dsc := jwt.NewWithClaims(jwt.SigningMethodHS256, jwt.MapClaims{
-		"vc": map[string]interface{}{
-			"type":              credType,
-			"credentialSubject": map[string]interface{}{"email": fixtureEmail},
-		},
-	})
-	// Embedded-credential issuer signature isn't checked (see
-	// dat_verification.go's file doc comment on v1 scope) - any key works.
-	dscSigned, err := dsc.SignedString([]byte("tck-fixture-unused-key"))
-	if err != nil {
-		panic(err)
-	}
-
 	dat := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
-		"iss":         fixtureDID,
-		"credentials": []interface{}{dscSigned},
+		"iss": fixtureDID,
 		// deliberately no "exp" - this fixture token needs to keep working
 		// indefinitely without regeneration.
 	})
