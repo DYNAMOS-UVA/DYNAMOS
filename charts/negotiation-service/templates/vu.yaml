@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: negotiation-service-vu
+  namespace: {{ .Values.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: negotiation-service-vu
+  template:
+    metadata:
+      labels:
+        app: negotiation-service-vu
+      annotations:
+        "linkerd.io/inject" : enabled
+    spec:
+      containers:
+      - name: negotiation-service-vu
+        image: {{ .Values.dockerArtifactAccount }}/negotiation-service:{{ .Values.branchNameTag }}
+        imagePullPolicy: IfNotPresent
+        ports:
+        - containerPort: 8080
+        env:
+        - name: DATA_STEWARD_NAME
+          value: VU
+        - name: ETCD_ENDPOINTS
+          value: {{ .Values.etcdEndpoints | quote }}
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: negotiation-service-vu
+  namespace: {{ .Values.Namespace }}
+spec:
+  selector:
+    app: negotiation-service-vu
+  ports:
+    - name: http-negotiation-service-api
+      protocol: TCP
+      port: 8080
+      targetPort: 8080
+  type: ClusterIP

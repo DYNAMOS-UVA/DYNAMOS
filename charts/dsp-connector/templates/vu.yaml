@@ -18,7 +18,7 @@ spec:
       containers:
       - name: dsp-connector-vu
         image: {{ .Values.dockerArtifactAccount }}/dsp-connector:{{ .Values.branchNameTag }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         env:
@@ -26,6 +26,12 @@ spec:
           value: VU
         - name: CATALOG_SERVICE_URL
           value: {{ .Values.catalogServiceURL.vu | quote }}
+        - name: NEGOTIATION_SERVICE_URL
+          value: {{ .Values.negotiationServiceURL.vu | quote }}
+        {{- if .Values.didWebScheme }}
+        - name: DID_WEB_SCHEME
+          value: {{ .Values.didWebScheme | quote }}
+        {{- end }}
 
 ---
 

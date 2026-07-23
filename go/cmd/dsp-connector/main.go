@@ -27,6 +27,14 @@ func main() {
 	if v := os.Getenv("NEGOTIATION_SERVICE_URL"); v != "" {
 		negotiationServiceURL = v
 	}
+	// didWebScheme defaults to "https" in prod (config_prod.go), per the
+	// did:web spec. Override to "http" only where a real deployment
+	// deliberately talks to a demo identity layer with no real TLS anywhere
+	// (see ADR-009-simulated-dataspace-via-mvd.md) - not a relaxation of the
+	// default itself.
+	if v := os.Getenv("DID_WEB_SCHEME"); v != "" {
+		didWebScheme = v
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)

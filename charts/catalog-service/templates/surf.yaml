@@ -18,7 +18,7 @@ spec:
       containers:
       - name: catalog-service-surf
         image: {{ .Values.dockerArtifactAccount }}/catalog-service:{{ .Values.branchNameTag }}
-        imagePullPolicy: Always
+        imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         env:

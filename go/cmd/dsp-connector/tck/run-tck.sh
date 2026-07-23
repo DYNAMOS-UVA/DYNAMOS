@@ -14,6 +14,20 @@ if ! curl -sf http://localhost:8090/health > /dev/null; then
   exit 1
 fi
 
+# Serve the fixture DID document (fixture/.well-known/did.json) locally so
+# dsp-connector can resolve the DAT's signing DID (issue #56,
+# dat_verification.go) during the run. dsp-connector's own resolution call
+# runs from the host, not from inside the TCK's container, so plain
+# localhost is reachable - no --add-host needed for this one.
+python3 -m http.server 9999 --directory "$SCRIPT_DIR/fixture" > /dev/null 2>&1 &
+FIXTURE_PID=$!
+trap 'kill "$FIXTURE_PID" 2>/dev/null || true' EXIT
+sleep 0.5
+if ! curl -sf http://localhost:9999/.well-known/did.json > /dev/null; then
+  echo "Fixture DID document server failed to start on :9999" >&2
+  exit 1
+fi
+
 docker run --rm --name dsp-tck \
   --add-host "host.docker.internal:host-gateway" \
   --mount "type=bind,source=$SCRIPT_DIR/tck.properties,target=/etc/tck/config.properties" \
