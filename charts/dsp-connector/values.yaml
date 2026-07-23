@@ -5,3 +5,7 @@ catalogServiceURL:
   uva: "http://catalog-service-uva.catalog-service.svc.cluster.local:8080"
   vu: "http://catalog-service-vu.catalog-service.svc.cluster.local:8080"
   surf: "http://catalog-service-surf.catalog-service.svc.cluster.local:8080"
+negotiationServiceURL:
+  uva: "http://negotiation-service-uva.negotiation-service.svc.cluster.local:8080"
+  vu: "http://negotiation-service-vu.negotiation-service.svc.cluster.local:8080"
+  surf: "http://negotiation-service-surf.negotiation-service.svc.cluster.local:8080"
