@@ -1,29 +1,29 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: catalog-service-uva
+  name: negotiation-service-surf
   namespace: {{ .Values.Namespace }}
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: catalog-service-uva
+      app: negotiation-service-surf
   template:
     metadata:
       labels:
-        app: catalog-service-uva
+        app: negotiation-service-surf
       annotations:
         "linkerd.io/inject" : enabled
     spec:
       containers:
-      - name: catalog-service-uva
-        image: {{ .Values.dockerArtifactAccount }}/catalog-service:{{ .Values.branchNameTag }}
+      - name: negotiation-service-surf
+        image: {{ .Values.dockerArtifactAccount }}/negotiation-service:{{ .Values.branchNameTag }}
         imagePullPolicy: IfNotPresent
         ports:
         - containerPort: 8080
         env:
         - name: DATA_STEWARD_NAME
-          value: UVA
+          value: SURF
         - name: ETCD_ENDPOINTS
           value: {{ .Values.etcdEndpoints | quote }}
 
@@ -32,13 +32,13 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: catalog-service-uva
+  name: negotiation-service-surf
   namespace: {{ .Values.Namespace }}
 spec:
   selector:
-    app: catalog-service-uva
+    app: negotiation-service-surf
   ports:
-    - name: http-catalog-service-api
+    - name: http-negotiation-service-api
       protocol: TCP
       port: 8080
       targetPort: 8080

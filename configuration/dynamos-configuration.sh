@@ -43,6 +43,7 @@ namespace_chart="${charts_path}/namespaces"
 orchestrator_chart="${charts_path}/orchestrator"
 agents_chart="${charts_path}/agents"
 catalog_service_chart="${charts_path}/catalog-service"
+negotiation_service_chart="${charts_path}/negotiation-service"
 dsp_connector_chart="${charts_path}/dsp-connector"
 ttp_chart="${charts_path}/thirdparty"
 api_gw_chart="${charts_path}/api-gateway"
@@ -137,7 +138,18 @@ fi
 linkerd check
 
 echo "Installing/upgrading Linkerd Jaeger..."
-linkerd jaeger install | kubectl apply -f -
+# The linkerd-jaeger extension is deprecated upstream (unmaintained since
+# Linkerd 2.19, https://linkerd.io/2-edge/tasks/jaeger-extension-migration/)
+# and its CLI plugin binary (linkerd-jaeger) is no longer published for
+# current edge releases - `linkerd jaeger install` fails with "unknown
+# command" when it's absent from PATH. Non-fatal: this is optional tracing
+# infra, unrelated to DYNAMOS's own services, and (if already installed from
+# an earlier run) stays running untouched either way.
+if command -v linkerd-jaeger &>/dev/null; then
+    linkerd jaeger install | kubectl apply -f -
+else
+    echo "  linkerd-jaeger CLI extension not found on PATH - skipping (deprecated upstream, optional tracing infra)."
+fi
 
 echo "Installing DYNAMOS core..."
 helm upgrade -i -f ${core_chart}/values.yaml core ${core_chart} --set hostPath=${DYNAMOS_HOST_ROOT}
@@ -166,6 +178,11 @@ sleep 1
 
 echo "Installing catalog-service layer..."
 helm upgrade -i -f "${catalog_service_chart}/values.yaml" catalog-service ${catalog_service_chart}
+
+sleep 1
+
+echo "Installing negotiation-service layer..."
+helm upgrade -i -f "${negotiation_service_chart}/values.yaml" negotiation-service ${negotiation_service_chart}
 
 sleep 1
 
