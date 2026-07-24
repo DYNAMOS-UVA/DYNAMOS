@@ -99,5 +99,17 @@ func fetchDatasetConfig(etcdClient *clientv3.Client, party, participant, dataset
 		return nil, fmt.Errorf("fetching dataset %q: %w", name, err)
 	}
 
-	return buildConfig(party, &agreement, participant, map[string]*pb.Dataset{name: &ds})
+	// buildConfig iterates every name in relation.DataSets expecting each to
+	// be present in the datasets map (its other caller, fetchConfig, always
+	// supplies the full set together) - narrow the relation to just the one
+	// dataset actually fetched here, or buildConfig fails on the first
+	// *other* dataset this relation references but this call never fetched.
+	// Invisible until a relation had more than one dataset (T2.5's TCK
+	// dataset seeding was the first).
+	singleDatasetRelation := relation
+	singleDatasetRelation.DataSets = []string{name}
+	singleDatasetAgreement := agreement
+	singleDatasetAgreement.Relations = map[string]api.Relation{participant: singleDatasetRelation}
+
+	return buildConfig(party, &singleDatasetAgreement, participant, map[string]*pb.Dataset{name: &ds})
 }

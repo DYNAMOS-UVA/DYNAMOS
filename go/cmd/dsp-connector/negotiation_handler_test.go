@@ -512,7 +512,16 @@ func TestNegotiationRequestHandler_ValidCounterRequest(t *testing.T) {
 	assert.Equal(t, "REQUESTED", ack.State)
 }
 
-func TestNegotiationRequestHandler_UnknownOffer(t *testing.T) {
+// TestNegotiationRequestHandler_UnknownOfferAccepted is T2.5's DSP TCK
+// finding (CN:01-02): unlike the initiating request, a counter-offer's own
+// terms aren't validated against the real catalog - a real DSP counter-offer
+// proposes new terms the provider hasn't necessarily offered yet, and per
+// the spec's own sequence for this scenario, the provider ACKs the protocol
+// message (REQUESTED) and judges its substance afterward via a real Offer
+// or Termination, not a blanket catalog-match gate. This used to return 400
+// invalid-offer here; requiring every counter-offer to already exist in the
+// catalog isn't part of the spec and blocked a real, conformant flow.
+func TestNegotiationRequestHandler_UnknownOfferAccepted(t *testing.T) {
 	startFixtureCatalogService(t)
 	startFixtureNegotiationService(t)
 
@@ -524,10 +533,10 @@ func TestNegotiationRequestHandler_UnknownOffer(t *testing.T) {
 
 	negotiationRequestHandler(rec, req)
 
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	var ne negotiationError
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
-	assert.Equal(t, "invalid-offer", ne.Code)
+	require.Equal(t, http.StatusOK, rec.Code)
+	var ack negotiationAck
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ack))
+	assert.Equal(t, "REQUESTED", ack.State)
 }
 
 // TestNegotiationRequestHandler_ProviderPidMismatch covers self-consistency
@@ -552,37 +561,9 @@ func TestNegotiationRequestHandler_ProviderPidMismatch(t *testing.T) {
 	assert.Equal(t, "invalid-request", ne.Code)
 }
 
-func TestNegotiationRequestHandler_UnprovisionedParticipant(t *testing.T) {
-	startFixtureCatalogService(t)
-	fixture := startFixtureNegotiationService(t)
-	// Simulate a participant who owns this negotiation (opened it while
-	// provisioned) but has since lost catalog access - a legitimate case,
-	// unlike a stranger probing someone else's providerPid (which the
-	// ownership check below rejects before ever reaching catalog validation).
-	*fixture.participant = "nobody@example.com"
-
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/urn:dynamos:negotiation:VU:fixture-1/request",
-		bytes.NewBufferString(offerBody("urn:dynamos:offer:VU:GUID")))
-	req.Header.Set("Authorization", testAuthHeader("nobody@example.com"))
-	req.SetPathValue("providerPid", "urn:dynamos:negotiation:VU:fixture-1")
-	rec := httptest.NewRecorder()
-
-	negotiationRequestHandler(rec, req)
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	var ne negotiationError
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
-	assert.Equal(t, "invalid-offer", ne.Code)
-	// Must be the clean message, not fetchCatalog's raw sentinel text leaking
-	// through (the bug this replaces: init and counter-request handlers used
-	// to disagree on this message for the identical underlying condition).
-	assert.Equal(t, []string{"Catalog not provisioned for this requester."}, ne.Reason)
-}
-
-// TestNegotiationRequestHandler_WrongParticipant covers the actual IDOR case
-// TestNegotiationRequestHandler_UnprovisionedParticipant above no longer
-// can: a stranger who never owned this negotiation must be told it doesn't
-// exist, not given a catalog-validation error that confirms it does.
+// TestNegotiationRequestHandler_WrongParticipant covers the real IDOR case:
+// a stranger who never owned this negotiation must be told it doesn't exist,
+// not given any error that confirms it does.
 func TestNegotiationRequestHandler_WrongParticipant(t *testing.T) {
 	startFixtureCatalogService(t)
 	startFixtureNegotiationService(t)

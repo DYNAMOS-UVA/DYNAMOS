@@ -50,23 +50,31 @@ type Negotiation struct {
 	State       State           `json:"state"`
 	Offer       json.RawMessage `json:"offer,omitempty"`
 	Agreement   json.RawMessage `json:"agreement,omitempty"`
-	CreatedAt   time.Time       `json:"createdAt"`
-	UpdatedAt   time.Time       `json:"updatedAt"`
+	// CallbackAddress is the consumer's callback base URL from the
+	// initiating Contract Request Message (DSP HTTPS binding's Consumer
+	// Path Bindings - every provider-initiated message this negotiation
+	// sends later gets POSTed to CallbackAddress+"/negotiations/"+ConsumerPid+"/<path>",
+	// per contract.negotiation.binding.https.md). Captured once at creation,
+	// same as Participant - the DSP spec doesn't let it change mid-negotiation.
+	CallbackAddress string    `json:"callbackAddress,omitempty"`
+	CreatedAt       time.Time `json:"createdAt"`
+	UpdatedAt       time.Time `json:"updatedAt"`
 }
 
 // newNegotiation builds a fresh negotiation in REQUESTED - the initiating
 // Contract Request Message (no providerPid yet).
-func newNegotiation(party, consumerPid, participant string, offer json.RawMessage) *Negotiation {
+func newNegotiation(party, consumerPid, participant, callbackAddress string, offer json.RawMessage) *Negotiation {
 	now := time.Now().UTC()
 	return &Negotiation{
-		ProviderPid: fmt.Sprintf("urn:dynamos:negotiation:%s:%s", party, uuid.New().String()),
-		ConsumerPid: consumerPid,
-		Party:       party,
-		Participant: participant,
-		State:       StateRequested,
-		Offer:       offer,
-		CreatedAt:   now,
-		UpdatedAt:   now,
+		ProviderPid:     fmt.Sprintf("urn:dynamos:negotiation:%s:%s", party, uuid.New().String()),
+		ConsumerPid:     consumerPid,
+		Party:           party,
+		Participant:     participant,
+		State:           StateRequested,
+		Offer:           offer,
+		CallbackAddress: callbackAddress,
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 }
 

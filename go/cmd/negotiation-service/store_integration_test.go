@@ -25,7 +25,7 @@ func TestStore_Integration(t *testing.T) {
 
 	store := NewStore(client)
 
-	n := newNegotiation("VU", "urn:example:consumer:1", "consumer@example.com", []byte(`{"@id":"offer-1"}`))
+	n := newNegotiation("VU", "urn:example:consumer:1", "consumer@example.com", "https://consumer.example.com/callback", []byte(`{"@id":"offer-1"}`))
 	require.NoError(t, store.Save(n))
 
 	fetched, err := store.Get(n.ProviderPid)
@@ -49,7 +49,7 @@ func TestStore_Integration_HotPathServesFromCache(t *testing.T) {
 	defer client.Close()
 
 	store := NewStore(client)
-	n := newNegotiation("VU", "urn:example:consumer:2", "consumer@example.com", []byte(`{}`))
+	n := newNegotiation("VU", "urn:example:consumer:2", "consumer@example.com", "https://consumer.example.com/callback", []byte(`{}`))
 	require.NoError(t, store.Save(n))
 
 	// Warm the cache.
@@ -60,7 +60,7 @@ func TestStore_Integration_HotPathServesFromCache(t *testing.T) {
 	// replica's write. The warm Store's cache is now stale by design (no
 	// Watch, per T2.1's decision - hot path trades consistency for no
 	// etcd round-trip on every read).
-	other := newNegotiation("VU", "urn:example:consumer:2", "consumer@example.com", []byte(`{}`))
+	other := newNegotiation("VU", "urn:example:consumer:2", "consumer@example.com", "https://consumer.example.com/callback", []byte(`{}`))
 	other.ProviderPid = n.ProviderPid
 	require.NoError(t, other.transition(StateTerminated, StateRequested))
 	require.NoError(t, etcd.SaveStructToEtcd(client, negotiationKey(n.ProviderPid), other))

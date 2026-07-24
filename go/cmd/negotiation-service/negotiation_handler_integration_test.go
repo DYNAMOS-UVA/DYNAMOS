@@ -143,15 +143,44 @@ func TestNegotiationLifecycle_FullPath(t *testing.T) {
 	require.Equal(t, http.StatusOK, finalizeRec.Code)
 	assert.Equal(t, StateFinalized, decodeNegotiation(t, finalizeRec).State)
 
+	// FINALIZED is a dead end too (T2.5, DSP TCK CN:03-01) - once the
+	// Provider has finalized and the Consumer has the data, a termination
+	// attempt is rejected rather than silently accepted.
 	terminateRec := doRequest(negotiationTerminationHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/termination", id, `{}`)
-	require.Equal(t, http.StatusOK, terminateRec.Code)
-	assert.Equal(t, StateTerminated, decodeNegotiation(t, terminateRec).State)
+	assert.Equal(t, http.StatusConflict, terminateRec.Code)
+	assert.Equal(t, "invalid-transition", decodeInternalError(t, terminateRec).Code)
 
-	// TERMINATED is a dead end - any further write is rejected.
 	afterRec := doRequest(negotiationOfferHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/offer", id,
 		`{"offer":{"@id":"offer-1"}}`)
 	assert.Equal(t, http.StatusConflict, afterRec.Code)
 	assert.Equal(t, "invalid-transition", decodeInternalError(t, afterRec).Code)
+}
+
+// TestNegotiationTerminationHandler_RejectsFromFinalized is a focused
+// regression test for the CN:03-01 fix above, independent of the full
+// lifecycle test's happy path.
+func TestNegotiationTerminationHandler_RejectsFromFinalized(t *testing.T) {
+	wireHandlerTestStore(t)
+
+	createRec := doRequest(negotiationsCollectionHandler, http.MethodPost, "/internal/v1/negotiations", "",
+		`{"consumerPid":"urn:example:consumer:4","participant":"consumer@example.com","offer":{"@id":"offer-1"}}`)
+	id := decodeNegotiation(t, createRec).ProviderPid
+
+	agreementRec := doRequest(negotiationAgreementHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/agreement", id,
+		`{"agreement":{"@id":"agr-1","target":"ds-1"}}`)
+	require.Equal(t, http.StatusOK, agreementRec.Code)
+
+	verifyRec := doRequest(negotiationVerificationHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/agreement/verification", id, `{}`)
+	require.Equal(t, http.StatusOK, verifyRec.Code)
+
+	finalizeRec := doRequest(negotiationEventsHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/events", id,
+		`{"eventType":"FINALIZED"}`)
+	require.Equal(t, http.StatusOK, finalizeRec.Code)
+	require.Equal(t, StateFinalized, decodeNegotiation(t, finalizeRec).State)
+
+	terminateRec := doRequest(negotiationTerminationHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/termination", id, `{}`)
+	assert.Equal(t, http.StatusConflict, terminateRec.Code)
+	assert.Equal(t, "invalid-transition", decodeInternalError(t, terminateRec).Code)
 }
 
 func TestNegotiationEventsHandler_WrongEventType(t *testing.T) {
@@ -175,12 +204,37 @@ func TestNegotiationAgreementHandler_WrongSourceState(t *testing.T) {
 		`{"consumerPid":"urn:example:consumer:3","participant":"consumer@example.com","offer":{"@id":"offer-1"}}`)
 	id := decodeNegotiation(t, createRec).ProviderPid
 
-	// Still REQUESTED - agreement is only valid from ACCEPTED.
+	offerRec := doRequest(negotiationOfferHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/offer", id,
+		`{"offer":{"@id":"offer-1","target":"ds-1"}}`)
+	require.Equal(t, http.StatusOK, offerRec.Code)
+
+	// OFFERED - agreement is valid from ACCEPTED or (T2.5) REQUESTED
+	// directly, but not from OFFERED: once an Offer was sent, the provider
+	// must wait for the consumer's ACCEPTED event before agreeing.
 	rec := doRequest(negotiationAgreementHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/agreement", id,
 		`{"agreement":{"@id":"agr-1"}}`)
 
 	assert.Equal(t, http.StatusConflict, rec.Code)
 	assert.Equal(t, "invalid-transition", decodeInternalError(t, rec).Code)
+}
+
+// TestNegotiationAgreementHandler_DirectFromRequested is T2.5's DSP TCK
+// finding: the spec (and dsp-negotiation-state-machine.md's own message
+// table) lets a provider agree to the consumer's initial request outright,
+// skipping the Offer/Accept round entirely - this handler was stricter than
+// the spec until the TCK's CN:01-04/02-03/02-07/03-01 tests caught it.
+func TestNegotiationAgreementHandler_DirectFromRequested(t *testing.T) {
+	wireHandlerTestStore(t)
+
+	createRec := doRequest(negotiationsCollectionHandler, http.MethodPost, "/internal/v1/negotiations", "",
+		`{"consumerPid":"urn:example:consumer:3b","participant":"consumer@example.com","offer":{"@id":"offer-1"}}`)
+	id := decodeNegotiation(t, createRec).ProviderPid
+
+	rec := doRequest(negotiationAgreementHandler, http.MethodPost, "/internal/v1/negotiations/"+id+"/agreement", id,
+		`{"agreement":{"@id":"agr-1","target":"ds-1"}}`)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.Equal(t, StateAgreed, decodeNegotiation(t, rec).State)
 }
 
 // TestNegotiationEventsHandler_FinalizedWritesPolicyEnforcerRelation is

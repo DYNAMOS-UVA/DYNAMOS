@@ -63,3 +63,44 @@ func TestFetchConfig_Integration_UnknownParticipant(t *testing.T) {
 	_, err := fetchConfig(client, "VU", "nobody@example.com")
 	require.Error(t, err)
 }
+
+// TestFetchDatasetConfig_Integration_MultiDatasetRelation is a regression
+// test for a real bug T2.5's TCK work surfaced: fetchDatasetConfig only
+// fetches the one requested dataset (by design, see its own doc comment),
+// but buildConfig loops over every name in relation.DataSets expecting each
+// to be present in the datasets map - invisible until a relation had more
+// than one dataset, since every relation in this repo only ever had exactly
+// one before now.
+func TestFetchDatasetConfig_Integration_MultiDatasetRelation(t *testing.T) {
+	endpoint := os.Getenv("TEST_ETCD_ENDPOINT")
+	if endpoint == "" {
+		endpoint = "http://localhost:23790"
+	}
+	client := etcd.GetEtcdClient(endpoint)
+	defer client.Close()
+
+	agreement := api.Agreement{
+		Name: "VU",
+		Relations: map[string]api.Relation{
+			"multi-dataset@example.com": {
+				ID:                      "multi-guid",
+				RequestTypes:            []string{"sqlDataRequest"},
+				DataSets:                []string{"wageGap", "otherDataset"},
+				AllowedArchetypes:       []string{"computeToData"},
+				AllowedComputeProviders: []string{"SURF"},
+			},
+		},
+	}
+	require.NoError(t, etcd.SaveStructToEtcd(client, "/policyEnforcer/agreements/VU", agreement))
+
+	dataset := pb.Dataset{Name: "wageGap", Type: "csv", Delimiter: ";", Tables: []string{"Aanstellingen", "Personen"}}
+	require.NoError(t, etcd.SaveStructToEtcd(client, "/datasets/wageGap", &dataset))
+	// otherDataset deliberately never written to etcd - fetchDatasetConfig
+	// must not need it to satisfy a request for wageGap alone.
+
+	cfg, err := fetchDatasetConfig(client, "VU", "multi-dataset@example.com", "urn:dynamos:dataset:VU:wageGap")
+	require.NoError(t, err)
+
+	require.Len(t, cfg.Datasets, 1)
+	require.Equal(t, "wageGap", cfg.Datasets[0].Name)
+}

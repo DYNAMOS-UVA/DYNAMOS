@@ -38,6 +38,15 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
+	// DSP version/metadata discovery endpoint - spec-required, unversioned,
+	// unauthenticated (common.protocol.md's "Exposure of Versions"). The
+	// spec has this at the bare root, but the DSP TCK's own MET group
+	// requests it relative to whatever base URL it's configured with
+	// (dataspacetck.dsp.connector.http.base.url, which is our /api/v1
+	// mount) - registered at both paths so real spec-compliant discovery
+	// and the TCK's own probe both resolve.
+	mux.HandleFunc("/.well-known/dspace-version", versionHandler)
+	mux.HandleFunc(apiVersion+"/.well-known/dspace-version", versionHandler)
 	// DSP HTTPS binding fixes /catalog/request relative to whatever <base>
 	// URL DYNAMOS publishes for this service - folding apiVersion into that
 	// base keeps this on the internal /api/v1 convention without deviating
