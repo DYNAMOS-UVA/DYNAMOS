@@ -30,6 +30,7 @@ fi
 
 docker run --rm --name dsp-tck \
   --add-host "host.docker.internal:host-gateway" \
+  -p "8083:8083" \
   --mount "type=bind,source=$SCRIPT_DIR/tck.properties,target=/etc/tck/config.properties" \
   eclipsedataspacetck/dsp-tck-runtime:latest \
   | tee "$LOG_FILE"

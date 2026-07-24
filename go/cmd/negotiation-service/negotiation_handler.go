@@ -74,7 +74,11 @@ func transitionOrError(w http.ResponseWriter, n *Negotiation, to State, from ...
 type negotiationRequestBody struct {
 	ConsumerPid string          `json:"consumerPid"`
 	Participant string          `json:"participant"`
-	Offer       json.RawMessage `json:"offer"`
+	// CallbackAddress is only meaningful (and required) on the initiating
+	// endpoint, same as Participant - a counter-request never changes where
+	// this negotiation's provider-initiated messages get delivered.
+	CallbackAddress string          `json:"callbackAddress"`
+	Offer           json.RawMessage `json:"offer"`
 }
 
 // negotiationsCollectionHandler implements
@@ -105,7 +109,7 @@ func negotiationsCollectionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n := newNegotiation(party, body.ConsumerPid, body.Participant, body.Offer)
+	n := newNegotiation(party, body.ConsumerPid, body.Participant, body.CallbackAddress, body.Offer)
 	if !saveOrError(w, n) {
 		return
 	}
@@ -204,6 +208,14 @@ func negotiationOfferHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	deliverToConsumer(n, "offers", map[string]any{
+		"@context":    dspContext,
+		"@type":       "ContractOfferMessage",
+		"providerPid": n.ProviderPid,
+		"consumerPid": n.ConsumerPid,
+		"offer":       n.Offer,
+	})
+
 	writeNegotiation(w, http.StatusOK, n)
 }
 
@@ -264,6 +276,16 @@ func negotiationEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if body.EventType == string(StateFinalized) {
+		deliverToConsumer(n, "events", map[string]any{
+			"@context":    dspContext,
+			"@type":       "ContractNegotiationEventMessage",
+			"providerPid": n.ProviderPid,
+			"consumerPid": n.ConsumerPid,
+			"eventType":   "FINALIZED",
+		})
+	}
+
 	writeNegotiation(w, http.StatusOK, n)
 }
 
@@ -277,7 +299,13 @@ type negotiationAgreementBody struct {
 
 // negotiationAgreementHandler implements
 // POST /internal/v1/negotiations/{id}/agreement (Contract Agreement Message)
-// -> AGREED. Valid from ACCEPTED only.
+// -> AGREED. Valid from ACCEPTED (the usual Offer/Accept round) or REQUESTED
+// directly (T2.5, DSP TCK CN:01-04/02-03/02-07/03-01) - the spec lets a
+// provider agree to the consumer's initial request outright, skipping the
+// Offer/Accept exchange entirely; docs/negotiation/dsp-negotiation-state-machine.md's
+// own message table already documented AGREED as reachable without
+// restricting the predecessor state, this handler was just stricter than
+// that until the TCK caught it.
 func negotiationAgreementHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -300,13 +328,21 @@ func negotiationAgreementHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !transitionOrError(w, n, StateAgreed, StateAccepted) {
+	if !transitionOrError(w, n, StateAgreed, StateAccepted, StateRequested) {
 		return
 	}
 	n.Agreement = body.Agreement
 	if !saveOrError(w, n) {
 		return
 	}
+
+	deliverToConsumer(n, "agreement", map[string]any{
+		"@context":    dspContext,
+		"@type":       "ContractAgreementMessage",
+		"providerPid": n.ProviderPid,
+		"consumerPid": n.ConsumerPid,
+		"agreement":   n.Agreement,
+	})
 
 	writeNegotiation(w, http.StatusOK, n)
 }
@@ -338,10 +374,13 @@ func negotiationVerificationHandler(w http.ResponseWriter, r *http.Request) {
 
 // negotiationTerminationHandler implements
 // POST /internal/v1/negotiations/{id}/termination (Contract Negotiation
-// Termination Message) -> TERMINATED. Valid from any state including
-// FINALIZED (per the spec, termination needs no explanation and is valid
-// from any state) - only TERMINATED itself is a dead end, enforced by
-// transition() regardless of the `from` list passed here.
+// Termination Message) -> TERMINATED. Valid from any non-terminal state -
+// FINALIZED is excluded (T2.5, DSP TCK CN:03-01): once the Provider has
+// finalized and the Consumer has the data, terminating no longer makes
+// protocol sense (docs/negotiation/dsp-negotiation-state-machine.md's
+// "Data is now available to the Consumer" note on FINALIZED). TERMINATED
+// itself is the other dead end, enforced by transition() regardless of the
+// `from` list passed here.
 func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -355,12 +394,24 @@ func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !transitionOrError(w, n, StateTerminated,
-		StateRequested, StateOffered, StateAccepted, StateAgreed, StateVerified, StateFinalized) {
+		StateRequested, StateOffered, StateAccepted, StateAgreed, StateVerified) {
 		return
 	}
 	if !saveOrError(w, n) {
 		return
 	}
+
+	// This one internal endpoint serves both directions (a
+	// Consumer-initiated termination forwarded by dsp-connector, and a
+	// Provider-initiated one from an external caller like
+	// tck_auto_responder.go) - always attempting delivery is harmless for
+	// the former (the consumer already knows) and required for the latter.
+	deliverToConsumer(n, "termination", map[string]any{
+		"@context":    dspContext,
+		"@type":       "ContractNegotiationTerminationMessage",
+		"providerPid": n.ProviderPid,
+		"consumerPid": n.ConsumerPid,
+	})
 
 	writeNegotiation(w, http.StatusOK, n)
 }

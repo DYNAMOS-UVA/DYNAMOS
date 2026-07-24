@@ -251,7 +251,7 @@ func negotiationRequestInitHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, err := createNegotiation(msg.ConsumerPid, participant, msg.Offer)
+	n, err := createNegotiation(msg.ConsumerPid, participant, msg.CallbackAddress, msg.Offer)
 	if err != nil {
 		mapNegotiationServiceError(w, "", msg.ConsumerPid, err)
 		return
@@ -322,22 +322,16 @@ func negotiationRequestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := validateOffer(participant, msg.Offer); err != nil {
-		if errors.Is(err, ErrOfferNotFound) || errors.Is(err, ErrInvalidOffer) {
-			logger.Sugar().Infow("Counter-request denied: invalid offer", "participant", participant, "error", err)
-			writeNegotiationError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-offer", err.Error())
-			return
-		}
-		if errors.Is(err, ErrParticipantNotFound) {
-			logger.Sugar().Infow("Counter-request denied: unprovisioned participant", "participant", participant, "error", err)
-			writeNegotiationError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-offer", "Catalog not provisioned for this requester.")
-			return
-		}
-		logger.Sugar().Errorw("catalog-service request failed", "participant", participant, "error", err)
-		writeNegotiationError(w, http.StatusBadGateway, providerPid, msg.ConsumerPid, "upstream-error", "Failed to validate offer against catalog.")
-		return
-	}
-
+	// Unlike the initiating request, a counter-offer's own terms aren't
+	// validated against the real catalog (T2.5, DSP TCK CN:01-02): per the
+	// DSP spec's own sequence, a counter-request is just accepted as a valid
+	// protocol message (ACK, REQUESTED), and it's the provider's own
+	// subsequent decision - a real Offer or Termination - that judges its
+	// substance. Catalog-matching is DYNAMOS's own added rule for the
+	// initiating request only (validateOffer is still called there, in
+	// negotiationRequestInitHandler); requiring every counter-offer
+	// iteration to already exist in the catalog isn't part of the spec and
+	// blocked a real, conformant negotiation flow.
 	n, err := counterRequestNegotiation(providerPid, msg.Offer)
 	if err != nil {
 		mapNegotiationServiceError(w, providerPid, msg.ConsumerPid, err)

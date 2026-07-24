@@ -126,11 +126,12 @@ func fetchNegotiation(providerPid string) (*negotiationRecord, error) {
 // createNegotiation calls negotiation-service's
 // POST /internal/v1/negotiations - the initiating Contract Request Message
 // (no providerPid yet), backing DSP POST /negotiations/request.
-func createNegotiation(consumerPid, participant string, offer json.RawMessage) (*negotiationRecord, error) {
+func createNegotiation(consumerPid, participant, callbackAddress string, offer json.RawMessage) (*negotiationRecord, error) {
 	return postNegotiation("/internal/v1/negotiations", map[string]any{
-		"consumerPid": consumerPid,
-		"participant": participant,
-		"offer":       offer,
+		"consumerPid":     consumerPid,
+		"participant":     participant,
+		"callbackAddress": callbackAddress,
+		"offer":           offer,
 	})
 }
 
