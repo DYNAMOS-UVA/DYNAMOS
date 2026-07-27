@@ -27,6 +27,9 @@ func main() {
 	if v := os.Getenv("NEGOTIATION_SERVICE_URL"); v != "" {
 		negotiationServiceURL = v
 	}
+	if v := os.Getenv("TRANSFER_SERVICE_URL"); v != "" {
+		transferServiceURL = v
+	}
 	// didWebScheme defaults to "https" in prod (config_prod.go), per the
 	// did:web spec. Override to "http" only where a real deployment
 	// deliberately talks to a demo identity layer with no real TLS anywhere
@@ -66,6 +69,17 @@ func main() {
 	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/events", negotiationEventsHandler)
 	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/agreement/verification", negotiationVerificationHandler)
 	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/termination", negotiationTerminationHandler)
+
+	// Transfer Process provider endpoints (T3.1.4, docs/transfer/dsp-transfer-state-machine.md).
+	// "/transfers/request" is a literal segment, so Go 1.22 ServeMux matches
+	// it ahead of the "/transfers/{providerPid}" wildcard below for that
+	// exact path, same as the negotiations routes above.
+	mux.HandleFunc(apiVersion+"/transfers/request", transferRequestInitHandler)
+	mux.HandleFunc(apiVersion+"/transfers/{providerPid}", transferGetHandler)
+	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/start", transferStartHandler)
+	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/completion", transferCompletionHandler)
+	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/termination", transferTerminationHandler)
+	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/suspension", transferSuspensionHandler)
 
 	logger.Sugar().Infow("Starting dsp-connector http server", "port", port, "apiVersion", apiVersion)
 	if err := http.ListenAndServe(port, mux); err != nil {

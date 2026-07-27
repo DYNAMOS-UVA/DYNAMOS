@@ -15,6 +15,9 @@ var catalogServiceURL = "http://localhost:8091"
 // negotiation-service's own local port (go/cmd/negotiation-service/config_local.go).
 var negotiationServiceURL = "http://localhost:8092"
 
+// transfer-process-service's own local port (go/cmd/transfer-process-service/config_local.go).
+var transferServiceURL = "http://localhost:8093"
+
 // apiVersion is the base path DYNAMOS publishes for this service's DSP
 // catalog service endpoint. The DSP HTTPS binding only fixes what's appended
 // to <base> (/catalog/request) - <base> itself is whatever DYNAMOS
