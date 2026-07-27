@@ -128,14 +128,21 @@ func fetchTransfer(providerPid string) (*transferRecord, error) {
 // POST /internal/v1/transfers, the initiating Transfer Request Message
 // (no providerPid yet), backing DSP POST /transfers/request.
 func createTransfer(consumerPid, participant, agreementId, format, callbackAddress string, dataAddress json.RawMessage) (*transferRecord, error) {
-	return postTransfer("/internal/v1/transfers", map[string]any{
+	body := map[string]any{
 		"consumerPid":     consumerPid,
 		"participant":     participant,
 		"agreementId":     agreementId,
 		"format":          format,
 		"callbackAddress": callbackAddress,
-		"dataAddress":     dataAddress,
-	})
+	}
+	// Omit the key entirely when dataAddress is empty. A present key with a
+	// nil json.RawMessage value marshals to the JSON literal null, not to a
+	// missing field. transfer-process-service would then store the text
+	// "null" as this transfer's DataAddress, instead of leaving it unset.
+	if len(dataAddress) > 0 {
+		body["dataAddress"] = dataAddress
+	}
+	return postTransfer("/internal/v1/transfers", body)
 }
 
 // startTransfer calls transfer-process-service's
@@ -145,9 +152,14 @@ func createTransfer(consumerPid, participant, agreementId, format, callbackAddre
 // own doc comment for the Provider-initiated-Start vs Consumer-resume-Start
 // asymmetry this reflects.
 func startTransfer(providerPid string, dataAddress json.RawMessage) (*transferRecord, error) {
-	return postTransfer("/internal/v1/transfers/"+url.PathEscape(providerPid)+"/start", map[string]any{
-		"dataAddress": dataAddress,
-	})
+	body := map[string]any{}
+	// Same reasoning as createTransfer: omit the key rather than send a
+	// present-but-null value, so a resume call with no new dataAddress
+	// leaves the transfer's stored DataAddress untouched.
+	if len(dataAddress) > 0 {
+		body["dataAddress"] = dataAddress
+	}
+	return postTransfer("/internal/v1/transfers/"+url.PathEscape(providerPid)+"/start", body)
 }
 
 // completeTransfer calls transfer-process-service's
