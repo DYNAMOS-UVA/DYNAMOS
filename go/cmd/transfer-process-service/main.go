@@ -13,6 +13,7 @@ import (
 var (
 	logger     = lib.InitLogger(logLevel)
 	etcdClient *clientv3.Client
+	store      *Store
 )
 
 func healthHandler(w http.ResponseWriter, r *http.Request) {
@@ -38,8 +39,16 @@ func main() {
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()
 
+	store = NewStore(etcdClient)
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
+	mux.HandleFunc("/internal/v1/transfers", transfersCollectionHandler)
+	mux.HandleFunc("/internal/v1/transfers/{id}", transferHandler)
+	mux.HandleFunc("/internal/v1/transfers/{id}/start", transferStartHandler)
+	mux.HandleFunc("/internal/v1/transfers/{id}/completion", transferCompletionHandler)
+	mux.HandleFunc("/internal/v1/transfers/{id}/suspension", transferSuspensionHandler)
+	mux.HandleFunc("/internal/v1/transfers/{id}/termination", transferTerminationHandler)
 
 	logger.Sugar().Infow("Starting transfer-process-service http server", "port", port, "party", party)
 	if err := http.ListenAndServe(port, mux); err != nil {
