@@ -123,6 +123,12 @@ func transfersCollectionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// T3.2: trigger the DYNAMOS job pipeline in the background. The
+	// caller (dsp-connector) gets its 201 response right away. Job
+	// completion arrives later, as its own outbound Start/Completion or
+	// Termination delivery. See job_execution.go.
+	go triggerJobAndDeliver(t.ProviderPid)
+
 	writeTransfer(w, http.StatusCreated, t)
 }
 
