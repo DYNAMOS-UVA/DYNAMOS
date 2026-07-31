@@ -28,6 +28,8 @@ spec:
           value: {{ .Values.catalogServiceURL.surf | quote }}
         - name: NEGOTIATION_SERVICE_URL
           value: {{ .Values.negotiationServiceURL.surf | quote }}
+        - name: TRANSFER_SERVICE_URL
+          value: {{ .Values.transferServiceURL.surf | quote }}
         {{- if .Values.didWebScheme }}
         - name: DID_WEB_SCHEME
           value: {{ .Values.didWebScheme | quote }}

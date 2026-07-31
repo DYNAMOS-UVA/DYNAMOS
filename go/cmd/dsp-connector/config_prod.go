@@ -19,9 +19,11 @@ var catalogServiceURL = "http://catalog-service.catalog-service.svc.cluster.loca
 // catalog-service's own placeholder used, until T2.6 confirms the real DNS.
 var negotiationServiceURL = "http://negotiation-service.negotiation-service.svc.cluster.local:8080"
 
-// Placeholder - transfer-process-service has no Helm chart/Service yet
-// (T3.3, not started). Assumes the same namespace-per-service convention
-// the other two placeholders use, until T3.3 confirms the real DNS.
+// Fallback only. The real, per-party address comes from the
+// TRANSFER_SERVICE_URL env var, set by charts/transfer-process-service's
+// own Helm chart (T3.3). This value is never reachable on its own: no
+// Service exists under this exact name, only the party-suffixed ones
+// (transfer-process-service-vu, and so on).
 var transferServiceURL = "http://transfer-process-service.transfer-process-service.svc.cluster.local:8080"
 
 // apiVersion is the base path DYNAMOS publishes for this service's DSP
