@@ -44,6 +44,7 @@ orchestrator_chart="${charts_path}/orchestrator"
 agents_chart="${charts_path}/agents"
 catalog_service_chart="${charts_path}/catalog-service"
 negotiation_service_chart="${charts_path}/negotiation-service"
+transfer_process_service_chart="${charts_path}/transfer-process-service"
 dsp_connector_chart="${charts_path}/dsp-connector"
 ttp_chart="${charts_path}/thirdparty"
 api_gw_chart="${charts_path}/api-gateway"
@@ -183,6 +184,11 @@ sleep 1
 
 echo "Installing negotiation-service layer..."
 helm upgrade -i -f "${negotiation_service_chart}/values.yaml" negotiation-service ${negotiation_service_chart}
+
+sleep 1
+
+echo "Installing transfer-process-service layer..."
+helm upgrade -i -f "${transfer_process_service_chart}/values.yaml" transfer-process-service ${transfer_process_service_chart}
 
 sleep 1
 
