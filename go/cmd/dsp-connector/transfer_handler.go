@@ -275,17 +275,16 @@ func transferGetHandler(w http.ResponseWriter, r *http.Request) {
 
 // transferStartHandler implements POST /transfers/:providerPid/start.
 //
-// This is the Consumer resume-after-suspend case only. The DSP spec sends
-// the initial Provider-initiated Start outbound instead, to the Consumer's
-// own callback endpoint. That message never comes through this inbound
-// provider-path route (see docs/transfer/dsp-transfer-state-machine.md's
-// asymmetry section). This handler enforces that split itself: it rejects
-// the call unless the transfer is already SUSPENDED.
-//
-// transfer-process-service's own internal /start endpoint also accepts
-// REQUESTED as a source state, for its own future Provider-initiated
-// caller (T3.2). dsp-connector must not let an inbound Consumer message
-// reach that path while the transfer is still REQUESTED.
+// The DSP Transfer Start Message goes both ways: the Provider sends it
+// outbound to start the transfer (T3.2's job-trigger path, delivered
+// straight to the Consumer's callback address - never through this inbound
+// route), and the Consumer sends it inbound, either to start a transfer
+// DYNAMOS itself has no job to trigger for (T3.4, DSP TCK TP-group
+// validation - a plain external consumer with no DYNAMOS job spec) or to
+// resume one already SUSPENDED. This handler accepts both inbound cases
+// and lets transfer-process-service's own transition rules (REQUESTED or
+// SUSPENDED -> STARTED) decide what is valid; anything else comes back as
+// a 400 invalid-transition.
 func transferStartHandler(w http.ResponseWriter, r *http.Request) {
 	if !requireMethod(w, r, http.MethodPost) {
 		return
@@ -323,10 +322,6 @@ func transferStartHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if msg.ConsumerPid != existing.ConsumerPid {
 		writeTransferError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-request", "consumerPid does not match this transfer.")
-		return
-	}
-	if existing.State != "SUSPENDED" {
-		writeTransferError(w, http.StatusBadRequest, providerPid, msg.ConsumerPid, "invalid-transition", "This endpoint only resumes a SUSPENDED transfer.")
 		return
 	}
 

@@ -289,11 +289,32 @@ func TestTransferGetHandler_NotFound(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, rec.Code)
 }
 
-func TestTransferStartHandler_RejectsWhenNotSuspended(t *testing.T) {
-	// The fixture starts in REQUESTED. dsp-connector's inbound /start
-	// endpoint must reject this - it only ever resumes a SUSPENDED transfer,
-	// per the Provider-initiated-Start vs Consumer-resume-Start asymmetry.
+func TestTransferStartHandler_StartsFromRequested(t *testing.T) {
+	// T3.4 (DSP TCK TP-group): a Consumer may send Start straight from
+	// REQUESTED, not only to resume a SUSPENDED transfer - the TCK's own
+	// TP_01/TP_02 provider tests do exactly this. The fixture starts in
+	// REQUESTED already.
 	startFixtureTransferService(t)
+
+	body := `{"consumerPid":"` + transferFixtureConsumerPid + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/"+transferFixtureProviderPid+"/start", bytes.NewBufferString(body))
+	req.SetPathValue("providerPid", transferFixtureProviderPid)
+	req.Header.Set("Authorization", testAuthHeader(transferFixtureParticipant))
+	rec := httptest.NewRecorder()
+
+	transferStartHandler(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var ack transferAck
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ack))
+	assert.Equal(t, "STARTED", ack.State)
+}
+
+func TestTransferStartHandler_RejectsWhenTerminated(t *testing.T) {
+	// TERMINATED is a dead end - Start must still be rejected from there,
+	// same as any other invalid source state (DSP TCK TP:03-04).
+	fixture := startFixtureTransferService(t)
+	*fixture.state = "TERMINATED"
 
 	body := `{"consumerPid":"` + transferFixtureConsumerPid + `"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/"+transferFixtureProviderPid+"/start", bytes.NewBufferString(body))
