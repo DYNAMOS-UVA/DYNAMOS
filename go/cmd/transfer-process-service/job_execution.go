@@ -38,6 +38,35 @@ func triggerJobAndDeliver(id string) {
 		return
 	}
 
+	// T3.4 (TCK TP-group validation): a transfer with no job spec is not
+	// a DYNAMOS-mediated request at all - for example a plain DSP
+	// TransferRequestMessage from the TCK, or any other non-DYNAMOS
+	// consumer. That is not a failure, so it must not terminate the
+	// transfer. It leaves REQUESTED for the Consumer's own DSP messages
+	// (transferStartHandler and friends) to drive forward instead. This
+	// used to fall through to requestJobExecution, whose own empty-check
+	// turned every such request into an immediate, unsolicited
+	// TERMINATED.
+	//
+	// An earlier version of this fix auto-started every job-less
+	// transfer instead of leaving it REQUESTED, specifically to satisfy
+	// the TCK's TP_01/TP_02/TP_03(driven) sub-tests, which need the
+	// Provider to autonomously move without being told. That regressed
+	// TP:03-01 and TP:03-02 - the TCK's own negative tests, which assert
+	// a transfer stays REQUESTED until a message actually arrives, and
+	// were passing before. There is no way to tell "the TCK's driven
+	// sub-tests" and "the TCK's negative sub-tests" apart from the
+	// request alone - both look identical (same format, no dataAddress)
+	// - so a single provider policy cannot satisfy both at once. Staying
+	// passive preserves the negative tests, which verify real protocol
+	// safety (rejecting invalid transitions), over the driven tests,
+	// which only verify that this specific implementation has autonomous
+	// business logic to fabricate - DYNAMOS deliberately does not have
+	// that for a job-less transfer. See ADR-008.
+	if len(t.DataAddress) == 0 {
+		return
+	}
+
 	result, err := requestJobExecution(t)
 	if err != nil {
 		logger.Sugar().Warnw("job trigger: job pipeline call failed, terminating transfer", "id", id, "error", err)

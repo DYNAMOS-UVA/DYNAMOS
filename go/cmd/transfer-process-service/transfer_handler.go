@@ -159,17 +159,15 @@ type transferStartBody struct {
 // transferStartHandler implements POST /internal/v1/transfers/{id}/start
 // (Transfer Start Message). It moves the transfer to STARTED.
 //
-// This move is valid from two different source states, sent by two
-// different parties. This is the Provider-initiated-Start vs
-// Consumer-resume-Start asymmetry (see
-// docs/transfer/dsp-transfer-state-machine.md):
-//   - REQUESTED -> STARTED: the initial start. The Provider sends this.
-//     It is the normal happy path. dsp-connector's inbound provider-path
-//     /start endpoint never triggers this case: no inbound route exists
-//     for it.
+// This move is valid from two different source states, reachable from
+// either party:
+//   - REQUESTED -> STARTED: the initial start. Either the Provider sends
+//     this (T3.2's job-trigger path, once a DYNAMOS job produces a
+//     result) or the Consumer does (dsp-connector's inbound
+//     /transfers/:providerPid/start endpoint, T3.1.4/T3.4 - a plain DSP
+//     transfer with no DYNAMOS job spec to trigger).
 //   - SUSPENDED -> STARTED: resume after suspend. The Consumer sends
-//     this. dsp-connector's inbound /transfers/:providerPid/start
-//     endpoint (T3.1.4) only ever forwards this case.
+//     this, forwarded the same way.
 //
 // Outbound delivery always fires, no matter which source state
 // triggered it. This matches negotiation-service's termination handler.

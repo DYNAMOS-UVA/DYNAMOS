@@ -147,10 +147,9 @@ func createTransfer(consumerPid, participant, agreementId, format, callbackAddre
 
 // startTransfer calls transfer-process-service's
 // POST /internal/v1/transfers/{id}/start, backing DSP
-// POST /transfers/:providerPid/start. dsp-connector only ever calls this
-// for the Consumer resume-after-suspend case - see transferStartHandler's
-// own doc comment for the Provider-initiated-Start vs Consumer-resume-Start
-// asymmetry this reflects.
+// POST /transfers/:providerPid/start - every inbound, Consumer-initiated
+// Start message, whether it starts a transfer from REQUESTED or resumes
+// one from SUSPENDED. See transferStartHandler's own doc comment.
 func startTransfer(providerPid string, dataAddress json.RawMessage) (*transferRecord, error) {
 	body := map[string]any{}
 	// Same reasoning as createTransfer: omit the key rather than send a
