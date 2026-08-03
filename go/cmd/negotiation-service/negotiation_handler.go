@@ -72,8 +72,8 @@ func transitionOrError(w http.ResponseWriter, n *Negotiation, to State, from ...
 // counter-request never changes who owns the negotiation, so it's ignored
 // there.
 type negotiationRequestBody struct {
-	ConsumerPid string          `json:"consumerPid"`
-	Participant string          `json:"participant"`
+	ConsumerPid string `json:"consumerPid"`
+	Participant string `json:"participant"`
 	// CallbackAddress is only meaningful (and required) on the initiating
 	// endpoint, same as Participant - a counter-request never changes where
 	// this negotiation's provider-initiated messages get delivered.

@@ -78,11 +78,12 @@ func TestNewNegotiation_KindProvider(t *testing.T) {
 }
 
 func TestNewConsumerNegotiation(t *testing.T) {
-	n := newConsumerNegotiation("VU", "did:web:vu.example.com", "https://vu.example.com/callback", []byte(`{"@id":"offer-1"}`))
+	n := newConsumerNegotiation("VU", "did:web:vu.example.com", "did:web:surf.example.com", "https://vu.example.com/callback", []byte(`{"@id":"offer-1"}`))
 
 	assert.Equal(t, KindConsumer, n.Kind)
 	assert.Equal(t, "VU", n.Party)
 	assert.Equal(t, "did:web:vu.example.com", n.Participant)
+	assert.Equal(t, "did:web:surf.example.com", n.RemoteParticipant)
 	assert.Equal(t, "https://vu.example.com/callback", n.CallbackAddress)
 	assert.Equal(t, StateRequested, n.State)
 	assert.Contains(t, n.ConsumerPid, "urn:dynamos:negotiation:consumer:VU:")

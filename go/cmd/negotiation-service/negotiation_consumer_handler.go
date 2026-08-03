@@ -17,9 +17,13 @@ type negotiationConsumerRequestBody struct {
 	ProviderEndpoint string `json:"providerEndpoint"`
 	// Participant is DYNAMOS's own identity, sent as the Authorization
 	// header on the outbound message (see Negotiation.Participant's doc).
-	Participant     string          `json:"participant"`
-	CallbackAddress string          `json:"callbackAddress"`
-	Offer           json.RawMessage `json:"offer"`
+	Participant string `json:"participant"`
+	// RemoteParticipant is the remote Provider's identity - see
+	// Negotiation.RemoteParticipant. Required: the caller already has to
+	// know who ProviderEndpoint belongs to in order to pick it.
+	RemoteParticipant string          `json:"remoteParticipant"`
+	CallbackAddress   string          `json:"callbackAddress"`
+	Offer             json.RawMessage `json:"offer"`
 }
 
 // negotiationsConsumerCollectionHandler implements
@@ -51,6 +55,10 @@ func negotiationsConsumerCollectionHandler(w http.ResponseWriter, r *http.Reques
 		writeInternalError(w, http.StatusBadRequest, "missing-participant", "participant is required")
 		return
 	}
+	if body.RemoteParticipant == "" {
+		writeInternalError(w, http.StatusBadRequest, "missing-remote-participant", "remoteParticipant is required")
+		return
+	}
 	if body.CallbackAddress == "" {
 		writeInternalError(w, http.StatusBadRequest, "missing-callback-address", "callbackAddress is required")
 		return
@@ -60,7 +68,7 @@ func negotiationsConsumerCollectionHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	n := newConsumerNegotiation(party, body.Participant, body.CallbackAddress, body.Offer)
+	n := newConsumerNegotiation(party, body.Participant, body.RemoteParticipant, body.CallbackAddress, body.Offer)
 
 	providerPid, err := sendContractRequest(body.ProviderEndpoint, body.Participant, n)
 	if err != nil {

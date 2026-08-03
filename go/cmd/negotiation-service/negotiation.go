@@ -51,10 +51,10 @@ type Negotiation struct {
 	// Kind defaults to KindProvider (the zero value is "") only through
 	// newNegotiation explicitly setting it - never leave this unset on a
 	// hand-built Negotiation, Store keys on it (see OwnPid/negotiationKey).
-	Kind        Kind            `json:"kind"`
-	ProviderPid string          `json:"providerPid"`
-	ConsumerPid string          `json:"consumerPid"`
-	Party       string          `json:"party"`
+	Kind        Kind   `json:"kind"`
+	ProviderPid string `json:"providerPid"`
+	ConsumerPid string `json:"consumerPid"`
+	Party       string `json:"party"`
 	// Participant is the other side's identity, captured at creation time -
 	// for a Provider-role negotiation, the external Consumer's identity
 	// (dsp-connector's Authorization-header value, see participantFromRequest
@@ -64,10 +64,21 @@ type Negotiation struct {
 	// interprets it - it's stored opaque purely so dsp-connector can check,
 	// on every later provider-endpoint call, that the caller is the same
 	// participant who opened this negotiation.
-	Participant string          `json:"participant"`
-	State       State           `json:"state"`
-	Offer       json.RawMessage `json:"offer,omitempty"`
-	Agreement   json.RawMessage `json:"agreement,omitempty"`
+	Participant string `json:"participant"`
+	// RemoteParticipant is only set on a Consumer-role negotiation: the
+	// identity of the remote Provider DYNAMOS expects to hear back from,
+	// declared once at creation (#81) - the caller of create-as-consumer
+	// already has to know who they're negotiating with to pick a
+	// providerEndpoint, so this costs nothing extra to require. dsp-connector
+	// compares every inbound Consumer callback's DAT-verified caller against
+	// this value (mirrors T2.3's ownership check, which uses Participant the
+	// same way for a Provider-role negotiation) - immutable, never
+	// "locked in" on first contact, so there's no window where an
+	// unauthenticated first caller could claim a negotiation.
+	RemoteParticipant string          `json:"remoteParticipant,omitempty"`
+	State             State           `json:"state"`
+	Offer             json.RawMessage `json:"offer,omitempty"`
+	Agreement         json.RawMessage `json:"agreement,omitempty"`
 	// CallbackAddress is the consumer's callback base URL from the
 	// initiating Contract Request Message (DSP HTTPS binding's Consumer
 	// Path Bindings - every provider-initiated message this negotiation
@@ -103,18 +114,20 @@ func newNegotiation(party, consumerPid, participant, callbackAddress string, off
 // Message. DYNAMOS is Consumer here, so it owns and generates the
 // ConsumerPid; ProviderPid is unknown until the remote Provider's 201
 // response comes back (see negotiationsConsumerCollectionHandler).
-func newConsumerNegotiation(party, participant, callbackAddress string, offer json.RawMessage) *Negotiation {
+// remoteParticipant is the Provider's identity - see Negotiation.RemoteParticipant.
+func newConsumerNegotiation(party, participant, remoteParticipant, callbackAddress string, offer json.RawMessage) *Negotiation {
 	now := time.Now().UTC()
 	return &Negotiation{
-		Kind:            KindConsumer,
-		ConsumerPid:     fmt.Sprintf("urn:dynamos:negotiation:consumer:%s:%s", party, uuid.New().String()),
-		Party:           party,
-		Participant:     participant,
-		State:           StateRequested,
-		Offer:           offer,
-		CallbackAddress: callbackAddress,
-		CreatedAt:       now,
-		UpdatedAt:       now,
+		Kind:              KindConsumer,
+		ConsumerPid:       fmt.Sprintf("urn:dynamos:negotiation:consumer:%s:%s", party, uuid.New().String()),
+		Party:             party,
+		Participant:       participant,
+		RemoteParticipant: remoteParticipant,
+		State:             StateRequested,
+		Offer:             offer,
+		CallbackAddress:   callbackAddress,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 }
 

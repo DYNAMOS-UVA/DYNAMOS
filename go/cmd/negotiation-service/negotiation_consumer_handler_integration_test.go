@@ -40,13 +40,14 @@ func TestNegotiationsConsumerCollectionHandler_Create(t *testing.T) {
 	defer provider.Close()
 
 	rec := doRequest(negotiationsConsumerCollectionHandler, http.MethodPost, "/internal/v1/negotiations/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
+		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","remoteParticipant":"did:web:surf.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
 
 	require.Equal(t, http.StatusCreated, rec.Code)
 	n := decodeNegotiation(t, rec)
 	assert.Equal(t, KindConsumer, n.Kind)
 	assert.Equal(t, StateRequested, n.State)
 	assert.Equal(t, "urn:example:provider:1", n.ProviderPid)
+	assert.Equal(t, "did:web:surf.example.com", n.RemoteParticipant)
 	assert.Contains(t, n.ConsumerPid, "urn:dynamos:negotiation:consumer:VU:")
 }
 
@@ -54,10 +55,23 @@ func TestNegotiationsConsumerCollectionHandler_MissingProviderEndpoint(t *testin
 	wireHandlerTestStore(t)
 
 	rec := doRequest(negotiationsConsumerCollectionHandler, http.MethodPost, "/internal/v1/negotiations/consumer", "",
-		`{"participant":"did:web:vu.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
+		`{"participant":"did:web:vu.example.com","remoteParticipant":"did:web:surf.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 	assert.Equal(t, "missing-provider-endpoint", decodeInternalError(t, rec).Code)
+}
+
+func TestNegotiationsConsumerCollectionHandler_MissingRemoteParticipant(t *testing.T) {
+	wireHandlerTestStore(t)
+
+	provider := fakeProvider(t, "urn:example:provider:missing-remote")
+	defer provider.Close()
+
+	rec := doRequest(negotiationsConsumerCollectionHandler, http.MethodPost, "/internal/v1/negotiations/consumer", "",
+		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Equal(t, "missing-remote-participant", decodeInternalError(t, rec).Code)
 }
 
 // TestNegotiationsConsumerCollectionHandler_ProviderRejects confirms a
@@ -73,7 +87,7 @@ func TestNegotiationsConsumerCollectionHandler_ProviderRejects(t *testing.T) {
 	defer provider.Close()
 
 	rec := doRequest(negotiationsConsumerCollectionHandler, http.MethodPost, "/internal/v1/negotiations/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
+		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","remoteParticipant":"did:web:surf.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
 
 	assert.Equal(t, http.StatusBadGateway, rec.Code)
 	assert.Equal(t, "provider-request-failed", decodeInternalError(t, rec).Code)
@@ -91,7 +105,7 @@ func TestNegotiationConsumerLifecycle_FullPath(t *testing.T) {
 	defer provider.Close()
 
 	createRec := doRequest(negotiationsConsumerCollectionHandler, http.MethodPost, "/internal/v1/negotiations/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
+		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","remoteParticipant":"did:web:surf.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
 	require.Equal(t, http.StatusCreated, createRec.Code)
 	id := decodeNegotiation(t, createRec).ConsumerPid
 
@@ -139,7 +153,7 @@ func TestNegotiationConsumerEventsHandler_RejectsAccepted(t *testing.T) {
 	defer provider.Close()
 
 	createRec := doRequest(negotiationsConsumerCollectionHandler, http.MethodPost, "/internal/v1/negotiations/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
+		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","remoteParticipant":"did:web:surf.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
 	id := decodeNegotiation(t, createRec).ConsumerPid
 
 	rec := doRequest(negotiationConsumerEventsHandler, http.MethodPost, "/internal/v1/negotiations/consumer/"+id+"/events", id,
@@ -165,7 +179,7 @@ func TestNegotiationConsumerAndProvider_DoNotCollide(t *testing.T) {
 	providerRoleId := decodeNegotiation(t, providerRoleRec).ProviderPid
 
 	consumerRoleRec := doRequest(negotiationsConsumerCollectionHandler, http.MethodPost, "/internal/v1/negotiations/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
+		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","remoteParticipant":"did:web:surf.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
 	require.Equal(t, http.StatusCreated, consumerRoleRec.Code)
 	consumerRoleId := decodeNegotiation(t, consumerRoleRec).ConsumerPid
 
