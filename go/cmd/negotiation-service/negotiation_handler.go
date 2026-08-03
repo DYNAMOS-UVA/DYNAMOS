@@ -29,8 +29,8 @@ func writeNegotiation(w http.ResponseWriter, status int, n *Negotiation) {
 // getNegotiationOrError fetches the negotiation and writes the right
 // internal-API error on failure: not-found is a business 404, anything else
 // (etcd I/O) is a 500 - callers only need to check ok.
-func getNegotiationOrError(w http.ResponseWriter, id string) (*Negotiation, bool) {
-	n, err := store.Get(id)
+func getNegotiationOrError(w http.ResponseWriter, kind Kind, id string) (*Negotiation, bool) {
+	n, err := store.Get(kind, id)
 	if err == nil {
 		return n, true
 	}
@@ -48,7 +48,7 @@ func getNegotiationOrError(w http.ResponseWriter, id string) (*Negotiation, bool
 // saveOrError persists n and writes a 500 internal-API error on failure.
 func saveOrError(w http.ResponseWriter, n *Negotiation) bool {
 	if err := store.Save(n); err != nil {
-		logger.Sugar().Errorw("failed to save negotiation", "id", n.ProviderPid, "error", err)
+		logger.Sugar().Errorw("failed to save negotiation", "id", n.OwnPid(), "error", err)
 		writeInternalError(w, http.StatusInternalServerError, "internal-error", "failed to save negotiation data")
 		return false
 	}
@@ -126,7 +126,7 @@ func negotiationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, ok := getNegotiationOrError(w, r.PathValue("id"))
+	n, ok := getNegotiationOrError(w, KindProvider, r.PathValue("id"))
 	if !ok {
 		return
 	}
@@ -151,7 +151,7 @@ func negotiationRequestHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, ok := getNegotiationOrError(w, r.PathValue("id"))
+	n, ok := getNegotiationOrError(w, KindProvider, r.PathValue("id"))
 	if !ok {
 		return
 	}
@@ -195,7 +195,7 @@ func negotiationOfferHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, ok := getNegotiationOrError(w, r.PathValue("id"))
+	n, ok := getNegotiationOrError(w, KindProvider, r.PathValue("id"))
 	if !ok {
 		return
 	}
@@ -243,7 +243,7 @@ func negotiationEventsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, ok := getNegotiationOrError(w, r.PathValue("id"))
+	n, ok := getNegotiationOrError(w, KindProvider, r.PathValue("id"))
 	if !ok {
 		return
 	}
@@ -323,7 +323,7 @@ func negotiationAgreementHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, ok := getNegotiationOrError(w, r.PathValue("id"))
+	n, ok := getNegotiationOrError(w, KindProvider, r.PathValue("id"))
 	if !ok {
 		return
 	}
@@ -357,7 +357,7 @@ func negotiationVerificationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, ok := getNegotiationOrError(w, r.PathValue("id"))
+	n, ok := getNegotiationOrError(w, KindProvider, r.PathValue("id"))
 	if !ok {
 		return
 	}
@@ -388,7 +388,7 @@ func negotiationTerminationHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n, ok := getNegotiationOrError(w, r.PathValue("id"))
+	n, ok := getNegotiationOrError(w, KindProvider, r.PathValue("id"))
 	if !ok {
 		return
 	}

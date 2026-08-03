@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -66,4 +68,67 @@ func deliverToConsumer(n *Negotiation, path string, message any) {
 		time.Sleep(backoff)
 		backoff *= 2
 	}
+}
+
+// ErrProviderRequestFailed marks any failure of the outbound initiating
+// Contract Request Message (#80): a network error, a non-2xx response, or a
+// 2xx response missing providerPid. Distinct from ErrNegotiationNotFound /
+// ErrInvalidTransition - this is an upstream failure, so the internal API
+// maps it to 502, not 404/409.
+var ErrProviderRequestFailed = errors.New("outbound Contract Request Message failed")
+
+// contractRequestAck is the minimal shape needed out of the remote
+// Provider's response to an initiating Contract Request Message - the DSP
+// ContractNegotiation ack (contract-negotiation-schema.json), just the field
+// this side needs to adopt the negotiation (providerPid).
+type contractRequestAck struct {
+	ProviderPid string `json:"providerPid"`
+}
+
+// sendContractRequest POSTs the initiating Contract Request Message to a
+// remote Provider's negotiations/request endpoint, synchronously - unlike
+// deliverToConsumer's fire-and-forget push, the caller
+// (negotiationsConsumerCollectionHandler) needs the real providerPid back
+// before it can persist anything durable, so this is a single attempt, no
+// retry: on failure the internal-API caller can just retry the whole
+// create-as-consumer call, there is nothing partial to clean up first.
+func sendContractRequest(providerEndpoint, participant string, n *Negotiation) (string, error) {
+	body, err := json.Marshal(map[string]any{
+		"@context":        dspContext,
+		"@type":           "ContractRequestMessage",
+		"consumerPid":     n.ConsumerPid,
+		"offer":           n.Offer,
+		"callbackAddress": n.CallbackAddress,
+	})
+	if err != nil {
+		return "", fmt.Errorf("%w: marshaling request: %w", ErrProviderRequestFailed, err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, providerEndpoint+"/negotiations/request", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("%w: building request: %w", ErrProviderRequestFailed, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", participant)
+
+	client := http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrProviderRequestFailed, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("%w: provider returned status %d", ErrProviderRequestFailed, resp.StatusCode)
+	}
+
+	var ack contractRequestAck
+	if err := json.NewDecoder(resp.Body).Decode(&ack); err != nil {
+		return "", fmt.Errorf("%w: decoding provider response: %w", ErrProviderRequestFailed, err)
+	}
+	if ack.ProviderPid == "" {
+		return "", fmt.Errorf("%w: provider response has no providerPid", ErrProviderRequestFailed)
+	}
+
+	return ack.ProviderPid, nil
 }

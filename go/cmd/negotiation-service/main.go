@@ -52,6 +52,19 @@ func main() {
 	mux.HandleFunc("/internal/v1/negotiations/{id}/agreement/verification", negotiationVerificationHandler)
 	mux.HandleFunc("/internal/v1/negotiations/{id}/termination", negotiationTerminationHandler)
 
+	// Consumer-role routes (#80) - DYNAMOS itself plays Consumer. Separate
+	// namespace, same as the etcd key split (see negotiationKey): "consumer"
+	// is a literal path segment, Go's ServeMux resolves it as more specific
+	// than the {id} wildcard above, so these never collide with the
+	// Provider-role routes even for a request literally shaped like
+	// /internal/v1/negotiations/consumer.
+	mux.HandleFunc("/internal/v1/negotiations/consumer", negotiationsConsumerCollectionHandler)
+	mux.HandleFunc("/internal/v1/negotiations/consumer/{id}", negotiationConsumerHandler)
+	mux.HandleFunc("/internal/v1/negotiations/consumer/{id}/offer", negotiationConsumerOfferHandler)
+	mux.HandleFunc("/internal/v1/negotiations/consumer/{id}/agreement", negotiationConsumerAgreementHandler)
+	mux.HandleFunc("/internal/v1/negotiations/consumer/{id}/events", negotiationConsumerEventsHandler)
+	mux.HandleFunc("/internal/v1/negotiations/consumer/{id}/termination", negotiationConsumerTerminationHandler)
+
 	logger.Sugar().Infow("Starting negotiation-service http server", "port", port, "party", party)
 	if err := http.ListenAndServe(port, mux); err != nil {
 		logger.Sugar().Fatalf("Error starting HTTP server: %v", err)

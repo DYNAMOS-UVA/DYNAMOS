@@ -15,6 +15,12 @@ import (
 // /policyEnforcer/agreements/{party} has. `id` (the ProviderPid) already
 // embeds the party (see negotiation.go's newNegotiation), so the key itself
 // doesn't need a separate party segment.
+//
+// #80: a Consumer-role negotiation keys on ConsumerPid instead (see
+// Negotiation.OwnPid), under its own /dsp/negotiations/consumer/ prefix -
+// a real namespace split, not just distinct-by-convention IDs, so a
+// Provider-role and a Consumer-role negotiation can never collide on lookup
+// even if their generated Pids ever coincided.
 type Store struct {
 	mu         sync.RWMutex
 	cache      map[string]Negotiation
@@ -28,7 +34,13 @@ func NewStore(etcdClient *clientv3.Client) *Store {
 	}
 }
 
-func negotiationKey(id string) string {
+// negotiationKey doubles as the etcd key and the in-memory cache key - using
+// the same kind-prefixed string for both means the collision guarantee is
+// structural, not just "IDs happen not to collide".
+func negotiationKey(kind Kind, id string) string {
+	if kind == KindConsumer {
+		return fmt.Sprintf("/dsp/negotiations/consumer/%s", id)
+	}
 	return fmt.Sprintf("/dsp/negotiations/%s", id)
 }
 
@@ -48,17 +60,21 @@ func (n Negotiation) clone() *Negotiation {
 
 // Get reads the hot path first, falling back to etcd on a cache miss (e.g.
 // after a restart) and populating the cache on success. Always returns a
-// fresh clone - never a pointer aliasing the cache's own copy.
-func (s *Store) Get(id string) (*Negotiation, error) {
+// fresh clone - never a pointer aliasing the cache's own copy. kind is
+// required (not read from the not-yet-fetched Negotiation) so callers must
+// say up front which namespace they mean - see negotiationKey.
+func (s *Store) Get(kind Kind, id string) (*Negotiation, error) {
+	key := negotiationKey(kind, id)
+
 	s.mu.RLock()
-	if n, ok := s.cache[id]; ok {
+	if n, ok := s.cache[key]; ok {
 		s.mu.RUnlock()
 		return n.clone(), nil
 	}
 	s.mu.RUnlock()
 
 	var n Negotiation
-	raw, err := etcd.GetAndUnmarshalJSON(s.etcdClient, negotiationKey(id), &n)
+	raw, err := etcd.GetAndUnmarshalJSON(s.etcdClient, key, &n)
 	if err != nil {
 		return nil, fmt.Errorf("fetching negotiation %q: %w", id, err)
 	}
@@ -67,7 +83,7 @@ func (s *Store) Get(id string) (*Negotiation, error) {
 	}
 
 	s.mu.Lock()
-	s.cache[id] = n
+	s.cache[key] = n
 	s.mu.Unlock()
 
 	return n.clone(), nil
@@ -82,15 +98,16 @@ func (s *Store) Get(id string) (*Negotiation, error) {
 func (s *Store) Save(n *Negotiation) error {
 	payload, err := json.Marshal(n)
 	if err != nil {
-		return fmt.Errorf("marshaling negotiation %q: %w", n.ProviderPid, err)
+		return fmt.Errorf("marshaling negotiation %q: %w", n.OwnPid(), err)
 	}
 
-	if err := etcd.PutValueToEtcd(s.etcdClient, negotiationKey(n.ProviderPid), string(payload)); err != nil {
-		return fmt.Errorf("saving negotiation %q: %w", n.ProviderPid, err)
+	key := negotiationKey(n.Kind, n.OwnPid())
+	if err := etcd.PutValueToEtcd(s.etcdClient, key, string(payload)); err != nil {
+		return fmt.Errorf("saving negotiation %q: %w", n.OwnPid(), err)
 	}
 
 	s.mu.Lock()
-	s.cache[n.ProviderPid] = *n.clone()
+	s.cache[key] = *n.clone()
 	s.mu.Unlock()
 
 	return nil
