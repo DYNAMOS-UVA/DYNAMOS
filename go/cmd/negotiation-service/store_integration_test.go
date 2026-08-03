@@ -96,7 +96,7 @@ func TestStore_Integration_ProviderAndConsumerKeysDoNotCollide(t *testing.T) {
 	provider.ProviderPid = sharedId
 	require.NoError(t, store.Save(provider))
 
-	consumer := newConsumerNegotiation("VU", "did:web:vu.example.com", "https://vu.example.com/callback", []byte(`{}`))
+	consumer := newConsumerNegotiation("VU", "did:web:vu.example.com", "did:web:surf.example.com", "https://vu.example.com/callback", []byte(`{}`))
 	consumer.ConsumerPid = sharedId
 	require.NoError(t, consumer.transition(StateOffered, StateRequested, StateOffered))
 	require.NoError(t, store.Save(consumer))

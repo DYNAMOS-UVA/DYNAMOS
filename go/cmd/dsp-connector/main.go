@@ -70,6 +70,24 @@ func main() {
 	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/agreement/verification", negotiationVerificationHandler)
 	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/termination", negotiationTerminationHandler)
 
+	// Contract Negotiation Consumer Path Bindings (#81,
+	// docs/negotiation/dsp-negotiation-consumer-state-machine.md) - DYNAMOS
+	// itself plays Consumer here. "/callback" is a fixed literal segment,
+	// not part of the DSP spec's own naming (the spec's ":callback" is
+	// whatever base path a Consumer chooses and advertises via
+	// callbackAddress on its own initiating Contract Request Message) - it
+	// exists purely so these routes don't collide with the Provider-role
+	// "{providerPid}" wildcard routes directly above, which Go's ServeMux
+	// would otherwise reject as ambiguous (same wildcard shape, same
+	// method, same trailing segment - e.g. both would match a literal
+	// .../events). Whichever internal caller eventually starts a
+	// Consumer-role negotiation (#82) must set callbackAddress to this same
+	// "<this connector's own base>"+apiVersion+"/callback".
+	mux.HandleFunc(apiVersion+"/callback/negotiations/{consumerPid}/offers", negotiationConsumerOffersHandler)
+	mux.HandleFunc(apiVersion+"/callback/negotiations/{consumerPid}/agreement", negotiationConsumerAgreementHandler)
+	mux.HandleFunc(apiVersion+"/callback/negotiations/{consumerPid}/events", negotiationConsumerEventsHandler)
+	mux.HandleFunc(apiVersion+"/callback/negotiations/{consumerPid}/termination", negotiationConsumerTerminationHandler)
+
 	// Transfer Process provider endpoints (T3.1.4, docs/transfer/dsp-transfer-state-machine.md).
 	// "/transfers/request" is a literal segment, so Go 1.22 ServeMux matches
 	// it ahead of the "/transfers/{providerPid}" wildcard below for that
