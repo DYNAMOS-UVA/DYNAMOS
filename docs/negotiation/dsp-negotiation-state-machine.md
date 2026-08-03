@@ -90,7 +90,7 @@ Decided in the 2026-07-16 Phase 2 drafting session (wiki `meta/phase2-contract-n
 | Agreement (`assigner`/`assignee`/`permission`/`target`) | DYNAMOS `Relation` (per-counterparty grant) | Same relationship the catalog's `Offer` already models - `assigner`/`assignee` line up with the existing per-`Relation` party pair used to scope catalog responses. |
 | `FINALIZED` transition (data now available) | Write into `/policyEnforcer/agreements/{party}` (existing etcd key `policy-enforcer` already reads) | The concrete mechanism DYNAMOS uses to grant real access - see below. No `policy-enforcer` code change; option B from the drafting session. |
 | ODRL `permission`/`constraint` in the Agreement | `Relation.RequestTypes` / `Relation.AllowedArchetypes` / `Relation.AllowedComputeProviders` | Same `dynamos:archetype`/`dynamos:computeProvider` constraint profile the catalog's worked example (`docs/catalog/dynamos-catalog-schema.md` decision 5) already defined - the negotiation's Agreement is built from the same vocabulary, not a new one. |
-| Consumer role / consumer endpoints | Not implemented | DYNAMOS is provider-only today, matching the catalog's existing scope. Deferred to a future issue if a real interop need appears (e.g. Phase 4 demo). |
+| Consumer role / consumer endpoints | Scoped separately | See [`dsp-negotiation-consumer-state-machine.md`](./dsp-negotiation-consumer-state-machine.md) (#79) - Consumer-role priority confirmed 2026-08-03, no longer deferred. |
 
 ### The `FINALIZED` write, concretely (feeds T2.4)
 
