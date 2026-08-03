@@ -68,7 +68,7 @@ func negotiationsConsumerCollectionHandler(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	n := newConsumerNegotiation(party, body.Participant, body.RemoteParticipant, body.CallbackAddress, body.Offer)
+	n := newConsumerNegotiation(party, body.Participant, body.RemoteParticipant, body.ProviderEndpoint, body.CallbackAddress, body.Offer)
 
 	providerPid, err := sendContractRequest(body.ProviderEndpoint, body.Participant, n)
 	if err != nil {
@@ -117,9 +117,12 @@ type negotiationConsumerOfferBody struct {
 // OFFERED (counter-offer), same predecessor set as the Provider-role
 // negotiationOfferHandler.
 //
-// This only records state - it does not decide whether to accept the Offer
-// or send the outbound ACCEPTED event. That decision belongs to #82's
-// autonomous accept-all logic, layered on top of this endpoint.
+// Once OFFERED is durably saved, #82's autoAcceptOffer runs immediately,
+// trivially accepting every Offer and sending the outbound ACCEPTED event -
+// its own failure doesn't fail this request, the Offer was still validly
+// recorded (see autoAcceptOffer's doc). The response reflects whichever
+// state actually landed (OFFERED or, on a successful auto-accept, ACCEPTED)
+// so the caller doesn't have to guess.
 func negotiationConsumerOfferHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -150,6 +153,8 @@ func negotiationConsumerOfferHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	n = autoAcceptOffer(n)
+
 	writeNegotiation(w, http.StatusOK, n)
 }
 
@@ -165,6 +170,9 @@ type negotiationConsumerAgreementBody struct {
 // predecessor set the Provider-role negotiationAgreementHandler uses (T2.5's
 // DSP TCK finding applies symmetrically here: the spec lets a Provider agree
 // outright, skipping the Offer/Accept exchange).
+//
+// Once AGREED is durably saved, #82's autoVerifyAgreement runs immediately,
+// same shape as negotiationConsumerOfferHandler's autoAcceptOffer call.
 func negotiationConsumerAgreementHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -194,6 +202,8 @@ func negotiationConsumerAgreementHandler(w http.ResponseWriter, r *http.Request)
 	if !saveOrError(w, n) {
 		return
 	}
+
+	n = autoVerifyAgreement(n)
 
 	writeNegotiation(w, http.StatusOK, n)
 }

@@ -70,12 +70,14 @@ func deliverToConsumer(n *Negotiation, path string, message any) {
 	}
 }
 
-// ErrProviderRequestFailed marks any failure of the outbound initiating
-// Contract Request Message (#80): a network error, a non-2xx response, or a
-// 2xx response missing providerPid. Distinct from ErrNegotiationNotFound /
+// ErrProviderRequestFailed marks any failure of an outbound call to the
+// remote Provider - the initiating Contract Request Message (#80), or (#82)
+// the autonomous ACCEPTED event / Agreement Verification Message: a network
+// error, a non-2xx response, or (Contract Request Message only) a 2xx
+// response missing providerPid. Distinct from ErrNegotiationNotFound /
 // ErrInvalidTransition - this is an upstream failure, so the internal API
 // maps it to 502, not 404/409.
-var ErrProviderRequestFailed = errors.New("outbound Contract Request Message failed")
+var ErrProviderRequestFailed = errors.New("outbound negotiation request to provider failed")
 
 // contractRequestAck is the minimal shape needed out of the remote
 // Provider's response to an initiating Contract Request Message - the DSP
