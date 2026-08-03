@@ -94,15 +94,17 @@ func TestNegotiationsConsumerCollectionHandler_ProviderRejects(t *testing.T) {
 }
 
 // TestNegotiationConsumerLifecycle_FullPath drives one Consumer-role
-// negotiation through every inbound-recording transition #80 provides,
-// mirroring TestNegotiationLifecycle_FullPath's Provider-role shape. ACCEPTED
-// and VERIFIED are deliberately absent - #80 records inbound messages only,
-// sending those two outbound is #82's autonomous accept-all logic.
+// negotiation through every transition end to end, mirroring
+// TestNegotiationLifecycle_FullPath's Provider-role shape. OFFERED -> ACCEPTED
+// and AGREED -> VERIFIED happen on their own, driven by #82's autonomous
+// accept-all logic (auto_accept_integration_test.go owns the focused tests
+// for that logic in isolation - this test just confirms it composes
+// correctly with the rest of the lifecycle, including the FINALIZED/
+// TERMINATED dead-end check at the end).
 func TestNegotiationConsumerLifecycle_FullPath(t *testing.T) {
 	wireHandlerTestStore(t)
 
-	provider := fakeProvider(t, "urn:example:provider:lifecycle")
-	defer provider.Close()
+	provider, _ := startFakeProviderLifecycle(t, "urn:example:provider:lifecycle")
 
 	createRec := doRequest(negotiationsConsumerCollectionHandler, http.MethodPost, "/internal/v1/negotiations/consumer", "",
 		`{"providerEndpoint":"`+provider.URL+`","participant":"did:web:vu.example.com","remoteParticipant":"did:web:surf.example.com","callbackAddress":"https://vu.example.com/callback","offer":{"@id":"offer-1"}}`)
@@ -112,29 +114,12 @@ func TestNegotiationConsumerLifecycle_FullPath(t *testing.T) {
 	offerRec := doRequest(negotiationConsumerOfferHandler, http.MethodPost, "/internal/v1/negotiations/consumer/"+id+"/offer", id,
 		`{"offer":{"@id":"offer-1","target":"ds-1"}}`)
 	require.Equal(t, http.StatusOK, offerRec.Code)
-	assert.Equal(t, StateOffered, decodeNegotiation(t, offerRec).State)
-
-	// OFFERED -> ACCEPTED is DYNAMOS-as-Consumer's own outbound send, #82's
-	// autonomous accept-all logic, not built yet - seed it directly to reach
-	// a realistic predecessor state for AGREED (mirrors the VERIFIED seed
-	// below for the same reason).
-	afterOffer, err := store.Get(KindConsumer, id)
-	require.NoError(t, err)
-	require.NoError(t, afterOffer.transition(StateAccepted, StateOffered))
-	require.NoError(t, store.Save(afterOffer))
+	assert.Equal(t, StateAccepted, decodeNegotiation(t, offerRec).State)
 
 	agreementRec := doRequest(negotiationConsumerAgreementHandler, http.MethodPost, "/internal/v1/negotiations/consumer/"+id+"/agreement", id,
 		`{"agreement":{"@id":"agr-1","target":"ds-1"}}`)
 	require.Equal(t, http.StatusOK, agreementRec.Code)
-	assert.Equal(t, StateAgreed, decodeNegotiation(t, agreementRec).State)
-
-	// Straight to VERIFIED/FINALIZED: #80 has no verification-send endpoint
-	// yet (#82's job), so seed the state directly to exercise the events
-	// handler's FINALIZED path in isolation.
-	n, err := store.Get(KindConsumer, id)
-	require.NoError(t, err)
-	require.NoError(t, n.transition(StateVerified, StateAgreed))
-	require.NoError(t, store.Save(n))
+	assert.Equal(t, StateVerified, decodeNegotiation(t, agreementRec).State)
 
 	finalizeRec := doRequest(negotiationConsumerEventsHandler, http.MethodPost, "/internal/v1/negotiations/consumer/"+id+"/events", id,
 		`{"eventType":"FINALIZED"}`)

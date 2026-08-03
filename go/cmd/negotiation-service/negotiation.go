@@ -75,10 +75,18 @@ type Negotiation struct {
 	// same way for a Provider-role negotiation) - immutable, never
 	// "locked in" on first contact, so there's no window where an
 	// unauthenticated first caller could claim a negotiation.
-	RemoteParticipant string          `json:"remoteParticipant,omitempty"`
-	State             State           `json:"state"`
-	Offer             json.RawMessage `json:"offer,omitempty"`
-	Agreement         json.RawMessage `json:"agreement,omitempty"`
+	RemoteParticipant string `json:"remoteParticipant,omitempty"`
+	// ProviderEndpoint is only set on a Consumer-role negotiation: the
+	// remote Provider's DSP base URL, captured once at creation (#80) and
+	// reused by #82's autonomous accept-all logic to send the outbound
+	// ACCEPTED event and Agreement Verification Message later in the same
+	// negotiation - both go to ProviderEndpoint+"/negotiations/"+ProviderPid+"/<path>",
+	// same resolution rule CallbackAddress already documents for the
+	// opposite direction.
+	ProviderEndpoint string          `json:"providerEndpoint,omitempty"`
+	State            State           `json:"state"`
+	Offer            json.RawMessage `json:"offer,omitempty"`
+	Agreement        json.RawMessage `json:"agreement,omitempty"`
 	// CallbackAddress is the consumer's callback base URL from the
 	// initiating Contract Request Message (DSP HTTPS binding's Consumer
 	// Path Bindings - every provider-initiated message this negotiation
@@ -115,7 +123,8 @@ func newNegotiation(party, consumerPid, participant, callbackAddress string, off
 // ConsumerPid; ProviderPid is unknown until the remote Provider's 201
 // response comes back (see negotiationsConsumerCollectionHandler).
 // remoteParticipant is the Provider's identity - see Negotiation.RemoteParticipant.
-func newConsumerNegotiation(party, participant, remoteParticipant, callbackAddress string, offer json.RawMessage) *Negotiation {
+// providerEndpoint is the Provider's DSP base URL - see Negotiation.ProviderEndpoint.
+func newConsumerNegotiation(party, participant, remoteParticipant, providerEndpoint, callbackAddress string, offer json.RawMessage) *Negotiation {
 	now := time.Now().UTC()
 	return &Negotiation{
 		Kind:              KindConsumer,
@@ -123,6 +132,7 @@ func newConsumerNegotiation(party, participant, remoteParticipant, callbackAddre
 		Party:             party,
 		Participant:       participant,
 		RemoteParticipant: remoteParticipant,
+		ProviderEndpoint:  providerEndpoint,
 		State:             StateRequested,
 		Offer:             offer,
 		CallbackAddress:   callbackAddress,
