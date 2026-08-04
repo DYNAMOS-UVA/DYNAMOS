@@ -36,3 +36,15 @@ var apiVersion = "/api/v1"
 // didWebScheme: real did:web resolution (dat_verification.go) always uses
 // https in prod, per spec. Only local/TCK builds relax this (config_local.go).
 var didWebScheme = "https"
+
+// party: overridden from the DATA_STEWARD_NAME env var in main.go - the
+// same Helm-provisioned variable negotiation-service's own `party` config
+// already reads (charts/dsp-connector's per-party templates set it, unused
+// by this service until #83's Consumer-role initiate handler needed its own
+// identity).
+var party = ""
+
+// connectorBaseURL: placeholder only, same caveat as catalogServiceURL/
+// negotiationServiceURL above - no real per-party ingress hostname exists
+// yet for dsp-connector to advertise as its own callbackAddress base.
+var connectorBaseURL = ""

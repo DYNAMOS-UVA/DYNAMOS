@@ -38,6 +38,12 @@ func main() {
 	if v := os.Getenv("DID_WEB_SCHEME"); v != "" {
 		didWebScheme = v
 	}
+	if v := os.Getenv("DATA_STEWARD_NAME"); v != "" {
+		party = v
+	}
+	if v := os.Getenv("CONNECTOR_BASE_URL"); v != "" {
+		connectorBaseURL = v
+	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
@@ -64,6 +70,14 @@ func main() {
 	// matches it ahead of the "/negotiations/{providerPid}" wildcard below
 	// for that exact path.
 	mux.HandleFunc(apiVersion+"/negotiations/request", negotiationRequestInitHandler)
+	// "/negotiations/initiate" is DYNAMOS's own Consumer-role entry point
+	// (#83, not part of the DSP spec itself) - the DSP TCK's CN_C group
+	// signals a CUT to start a negotiation via a harness-specific POST to a
+	// configured URL (dataspacetck.dsp.connector.negotiation.initiate.url,
+	// HttpConsumerNegotiationClientImpl.initiateRequest in the TCK's own
+	// source), separate from any real DSP protocol message. Same literal-
+	// segment-beats-wildcard reasoning as "/negotiations/request" above.
+	mux.HandleFunc(apiVersion+"/negotiations/initiate", negotiationConsumerInitiateHandler)
 	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}", negotiationGetHandler)
 	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/request", negotiationRequestHandler)
 	mux.HandleFunc(apiVersion+"/negotiations/{providerPid}/events", negotiationEventsHandler)
@@ -87,6 +101,12 @@ func main() {
 	mux.HandleFunc(apiVersion+"/callback/negotiations/{consumerPid}/agreement", negotiationConsumerAgreementHandler)
 	mux.HandleFunc(apiVersion+"/callback/negotiations/{consumerPid}/events", negotiationConsumerEventsHandler)
 	mux.HandleFunc(apiVersion+"/callback/negotiations/{consumerPid}/termination", negotiationConsumerTerminationHandler)
+	// Not one of the DSP spec's own Consumer Path Bindings - the DSP TCK's
+	// own verification step (#83, ConsumerNegotiationPipelineImpl's
+	// thenVerifyConsumerState) polls this path to confirm the real state
+	// after a scripted message exchange. Different path shape than the 4
+	// routes above (no trailing segment), so no collision.
+	mux.HandleFunc(apiVersion+"/callback/negotiations/{consumerPid}", negotiationConsumerGetHandler)
 
 	// Transfer Process provider endpoints (T3.1.4, docs/transfer/dsp-transfer-state-machine.md).
 	// "/transfers/request" is a literal segment, so Go 1.22 ServeMux matches

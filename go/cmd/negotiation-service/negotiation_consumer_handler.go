@@ -117,12 +117,14 @@ type negotiationConsumerOfferBody struct {
 // OFFERED (counter-offer), same predecessor set as the Provider-role
 // negotiationOfferHandler.
 //
-// Once OFFERED is durably saved, #82's autoAcceptOffer runs immediately,
-// trivially accepting every Offer and sending the outbound ACCEPTED event -
-// its own failure doesn't fail this request, the Offer was still validly
-// recorded (see autoAcceptOffer's doc). The response reflects whichever
-// state actually landed (OFFERED or, on a successful auto-accept, ACCEPTED)
-// so the caller doesn't have to guess.
+// Once OFFERED is durably saved, #82's autoAcceptOffer fires in the
+// background, trivially accepting every Offer and sending the outbound
+// ACCEPTED event - async (see autoAcceptOffer's own doc on why: a
+// synchronous outbound call back to the Provider that just sent this same
+// Offer raced its own embedded server in a live TCK run). The response
+// always reports OFFERED - the DSP HTTPS binding doesn't require this ack
+// to carry the post-auto-accept state, a GET afterwards is how a caller
+// observes whether it reached ACCEPTED.
 func negotiationConsumerOfferHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -153,7 +155,7 @@ func negotiationConsumerOfferHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	n = autoAcceptOffer(n)
+	autoAcceptOffer(n)
 
 	writeNegotiation(w, http.StatusOK, n)
 }
@@ -171,8 +173,10 @@ type negotiationConsumerAgreementBody struct {
 // DSP TCK finding applies symmetrically here: the spec lets a Provider agree
 // outright, skipping the Offer/Accept exchange).
 //
-// Once AGREED is durably saved, #82's autoVerifyAgreement runs immediately,
-// same shape as negotiationConsumerOfferHandler's autoAcceptOffer call.
+// Once AGREED is durably saved, #82's autoVerifyAgreement fires in the
+// background, same async shape as negotiationConsumerOfferHandler's
+// autoAcceptOffer call - the response always reports AGREED, a GET
+// afterwards is how a caller observes whether it reached VERIFIED.
 func negotiationConsumerAgreementHandler(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
@@ -203,7 +207,7 @@ func negotiationConsumerAgreementHandler(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	n = autoVerifyAgreement(n)
+	autoVerifyAgreement(n)
 
 	writeNegotiation(w, http.StatusOK, n)
 }

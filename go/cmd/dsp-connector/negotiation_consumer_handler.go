@@ -69,6 +69,40 @@ func mapConsumerNegotiationServiceError(w http.ResponseWriter, providerPid, cons
 	mapNegotiationServiceError(w, providerPid, consumerPid, err)
 }
 
+// negotiationConsumerGetHandler implements
+// GET /:callback/negotiations/:consumerPid - not one of the DSP spec's own
+// Consumer Path Bindings (those are the 4 POST handlers below), but the DSP
+// TCK's own verification step (#83, ConsumerNegotiationPipelineImpl's
+// thenVerifyConsumerState) polls this exact path, relative to whatever
+// callbackAddress DYNAMOS advertised on its outbound Contract Request
+// Message, to confirm the negotiation's real state after a scripted message
+// exchange. Same ownership check as every other Consumer-role handler here.
+func negotiationConsumerGetHandler(w http.ResponseWriter, r *http.Request) {
+	if !requireMethod(w, r, http.MethodGet) {
+		return
+	}
+
+	consumerPid := r.PathValue("consumerPid")
+
+	participant, ok := participantFromRequest(r)
+	if !ok {
+		writeNegotiationError(w, http.StatusUnauthorized, "", consumerPid, "missing-authorization", "An Authorization header identifying the requesting participant is required.")
+		return
+	}
+
+	n, err := fetchConsumerNegotiation(consumerPid)
+	if err != nil {
+		mapConsumerNegotiationServiceError(w, "", consumerPid, err)
+		return
+	}
+	if err := checkConsumerNegotiationOwnership(n, participant); err != nil {
+		mapConsumerNegotiationServiceError(w, n.ProviderPid, consumerPid, err)
+		return
+	}
+
+	writeConsumerNegotiationAck(w, http.StatusOK, n)
+}
+
 // negotiationConsumerOffersHandler implements
 // POST /:callback/negotiations/:consumerPid/offers (Contract Offer Message)
 // per the DSP HTTPS binding's Consumer Path Bindings (#81). Records the
