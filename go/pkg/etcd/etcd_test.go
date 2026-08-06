@@ -147,7 +147,7 @@ func TestGetPrefixListEtcd(t *testing.T) {
 
 	// Assert that no error occurred and the result is as expected:
 	assert.NoError(t, err)
-	expectedResult := []TestType{
+	expectedResult := []*TestType{
 		{ID: "1", Name: "one"},
 		{ID: "2", Name: "two"},
 	}
