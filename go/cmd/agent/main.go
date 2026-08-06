@@ -51,6 +51,7 @@ type dataResponse struct {
 
 type waitingJob struct {
 	job              *batchv1.Job
+	queueName        string
 	nrOfDataStewards int
 }
 
