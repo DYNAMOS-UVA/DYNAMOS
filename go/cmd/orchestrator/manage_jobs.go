@@ -318,6 +318,7 @@ func getJobAcrossAgents(ctx context.Context, targetMap map[string]*pb.Compositio
 
 func handleRequestApproval(ctx context.Context, validationResponse *pb.ValidationResponse) {
 	result := &pb.RequestApprovalResponse{Type: "requestApprovalResponse", RequestMetadata: &pb.RequestMetadata{DestinationQueue: "api-gateway-in"}}
+	result.User = validationResponse.User
 
 	authorizedProviders, err := getAuthorizedProviders(validationResponse)
 	if err != nil {
@@ -351,11 +352,7 @@ func handleRequestApproval(ctx context.Context, validationResponse *pb.Validatio
 		}
 	}
 
-	result.Auth = &pb.Auth{}
-	result.User = &pb.User{}
-
 	result.Auth = validationResponse.Auth
-	result.User = validationResponse.User
 
 	result.AuthorizedProviders = make(map[string]string)
 	result.AuthorizedProviders = userTargets

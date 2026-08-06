@@ -233,7 +233,7 @@ func handleSqlComputeProvider(ctx context.Context, jobName string, compositionRe
 	}
 	logger.Sugar().Debugf("Created job: %s", createdJob.Name)
 	waitingJobMutex.Lock()
-	waitingJobMap[sqlDataRequest.RequestMetadata.CorrelationId] = &waitingJob{job: createdJob, nrOfDataStewards: len(compositionRequest.DataProviders)}
+	waitingJobMap[sqlDataRequest.RequestMetadata.CorrelationId] = &waitingJob{job: createdJob, queueName: jobName, nrOfDataStewards: len(compositionRequest.DataProviders)}
 	waitingJobMutex.Unlock()
 	logger.Sugar().Debugf("Created job nr of stewards: %d", waitingJobMap[sqlDataRequest.RequestMetadata.CorrelationId].nrOfDataStewards)
 

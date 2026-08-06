@@ -13,6 +13,7 @@ import (
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
+	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.opencensus.io/trace/propagation"
 	"go.opencensus.io/trace"
@@ -39,8 +40,18 @@ func requestHandler() http.HandlerFunc {
 			return
 		}
 
+		// requestApprovalMap is keyed on User.Id, so it must be unique per
+		// in-flight HTTP request, not just per caller. A caller-supplied Id
+		// (or the common case of no Id at all) collides across concurrent
+		// requests: the second request's map entry silently overwrites the
+		// first's response channel, so the first request's response is never
+		// delivered and it hangs until its own context deadline. Generating
+		// the correlation Id here, instead of trusting caller input, is safe
+		// because nothing downstream (orchestrator, policy-enforcer) reads
+		// User.Id for anything other than echoing it back on this same
+		// round trip.
 		userPb := &pb.User{
-			Id:       apiReqApproval.User.Id,
+			Id:       uuid.New().String(),
 			UserName: apiReqApproval.User.UserName,
 		}
 
@@ -119,6 +130,9 @@ func requestHandler() http.HandlerFunc {
 			return
 
 		case <-ctx.Done():
+			requestApprovalMutex.Lock()
+			delete(requestApprovalMap, protoRequest.User.Id)
+			requestApprovalMutex.Unlock()
 			http.Error(w, "Request timed out", http.StatusRequestTimeout)
 			return
 		}
