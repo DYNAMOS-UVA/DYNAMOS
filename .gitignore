@@ -42,3 +42,17 @@ datasets/*.csv
 # DSP TCK run output (go/cmd/dsp-connector/tck/run-tck.sh) - reproducible
 # evidence, not something to keep committed
 go/cmd/dsp-connector/tck/*.log
+
+# `go build ./cmd/<service>/...` run from go/ writes a bare binary named
+# after the package straight into go/ - no extension, so *.exe/*.dll/*.so
+# above don't catch it. Listed per-service rather than a blanket rule,
+# since go/dsp-connector is a real pre-existing tracked binary at this
+# exact path (unrelated repo-hygiene debt, not touched here).
+/go/transfer-process-service
+/go/negotiation-service
+/go/catalog-service
+/go/api-gateway
+/go/orchestrator
+/go/agent
+/go/sidecar
+/go/policy-enforcer
