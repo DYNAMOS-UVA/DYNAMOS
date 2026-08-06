@@ -67,6 +67,20 @@ func TestTransition_TerminatedIsDeadEnd(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidTransition)
 }
 
+func TestNewConsumerTransferProcess(t *testing.T) {
+	tp := newConsumerTransferProcess("VU", "urn:dynamos:party:VU", "urn:dynamos:party:UVA", "https://uva.example.com/api/v1", "urn:example:agreement:1", "dynamos:computeToData", "https://vu.example.com/api/v1/callback", nil)
+
+	assert.Equal(t, KindConsumer, tp.Kind)
+	assert.Equal(t, "VU", tp.Party)
+	assert.Equal(t, "urn:dynamos:party:VU", tp.Participant)
+	assert.Equal(t, "urn:dynamos:party:UVA", tp.RemoteParticipant)
+	assert.Equal(t, "https://uva.example.com/api/v1", tp.ProviderEndpoint)
+	assert.Equal(t, "urn:example:agreement:1", tp.AgreementId)
+	assert.Equal(t, StateRequested, tp.State)
+	assert.Contains(t, tp.ConsumerPid, "urn:dynamos:transfer:consumer:VU:")
+	assert.Empty(t, tp.ProviderPid, "ProviderPid is unknown until the remote Provider's 201 response")
+}
+
 func TestTransferProcess_Clone(t *testing.T) {
 	tp := newTransferProcess("VU", "urn:example:consumer:1", "consumer@example.com", "urn:example:agreement:1", "example:HTTP_PULL", "https://consumer.example.com/callback", []byte(`{"endpoint":"http://example.com"}`))
 	c := tp.clone()
