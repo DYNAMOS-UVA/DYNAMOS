@@ -114,12 +114,14 @@ func TestNegotiationConsumerLifecycle_FullPath(t *testing.T) {
 	offerRec := doRequest(negotiationConsumerOfferHandler, http.MethodPost, "/internal/v1/negotiations/consumer/"+id+"/offer", id,
 		`{"offer":{"@id":"offer-1","target":"ds-1"}}`)
 	require.Equal(t, http.StatusOK, offerRec.Code)
-	assert.Equal(t, StateAccepted, decodeNegotiation(t, offerRec).State)
+	assert.Equal(t, StateOffered, decodeNegotiation(t, offerRec).State)
+	waitForConsumerState(t, id, StateAccepted)
 
 	agreementRec := doRequest(negotiationConsumerAgreementHandler, http.MethodPost, "/internal/v1/negotiations/consumer/"+id+"/agreement", id,
 		`{"agreement":{"@id":"agr-1","target":"ds-1"}}`)
 	require.Equal(t, http.StatusOK, agreementRec.Code)
-	assert.Equal(t, StateVerified, decodeNegotiation(t, agreementRec).State)
+	assert.Equal(t, StateAgreed, decodeNegotiation(t, agreementRec).State)
+	waitForConsumerState(t, id, StateVerified)
 
 	finalizeRec := doRequest(negotiationConsumerEventsHandler, http.MethodPost, "/internal/v1/negotiations/consumer/"+id+"/events", id,
 		`{"eventType":"FINALIZED"}`)

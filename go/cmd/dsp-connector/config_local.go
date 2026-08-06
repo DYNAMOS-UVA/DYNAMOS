@@ -30,3 +30,18 @@ var apiVersion = "/api/v1"
 // relaxation MVD's own local deployment makes (edc.iam.did.web.use.https:
 // "false"), not a DYNAMOS-specific shortcut.
 var didWebScheme = "http"
+
+// party identifies which DYNAMOS data steward this connector instance
+// belongs to - mirrors negotiation-service's own `party` config. Only
+// needed once dsp-connector itself has to assert an identity as Consumer
+// (#83's negotiationConsumerInitiateHandler); every other handler in this
+// package only ever needs the caller's identity, never its own.
+var party = "VU"
+
+// connectorBaseURL is this dsp-connector instance's own externally
+// reachable base URL, used to build the callbackAddress on an outbound
+// Contract Request Message (#83's Consumer-role initiate handler). The DSP
+// TCK's own Docker container reaches the host via host.docker.internal,
+// the same host/port dataspacetck.dsp.connector.http.base.url already uses
+// for the Provider-role groups (see tck/tck.properties).
+var connectorBaseURL = "http://host.docker.internal:8090"

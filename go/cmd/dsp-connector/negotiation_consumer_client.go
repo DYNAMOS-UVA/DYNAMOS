@@ -78,6 +78,20 @@ func fetchConsumerNegotiation(consumerPid string) (*consumerNegotiationRecord, e
 	return &n, nil
 }
 
+// createConsumerNegotiation calls negotiation-service's
+// POST /internal/v1/negotiations/consumer - the initiating Contract Request
+// Message DYNAMOS itself sends as Consumer (#80), backing #83's
+// negotiationConsumerInitiateHandler.
+func createConsumerNegotiation(providerEndpoint, participant, remoteParticipant, callbackAddress string, offer json.RawMessage) (*consumerNegotiationRecord, error) {
+	return postConsumerNegotiation("/internal/v1/negotiations/consumer", map[string]any{
+		"providerEndpoint":  providerEndpoint,
+		"participant":       participant,
+		"remoteParticipant": remoteParticipant,
+		"callbackAddress":   callbackAddress,
+		"offer":             offer,
+	})
+}
+
 // recordConsumerOffer calls negotiation-service's
 // POST /internal/v1/negotiations/consumer/{id}/offer, backing the DSP
 // POST /:callback/negotiations/:consumerPid/offers Consumer Path Binding.

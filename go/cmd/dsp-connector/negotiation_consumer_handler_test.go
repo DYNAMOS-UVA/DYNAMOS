@@ -83,6 +83,66 @@ func consumerOfferBody() string {
 	return `{"@context":["https://w3id.org/dspace/2025/1/context.jsonld"],"@type":"ContractOfferMessage","providerPid":"` + fixtureProviderPid + `","consumerPid":"` + fixtureConsumerPid + `","offer":{"@type":"Offer","@id":"urn:dynamos:offer:VU:GUID","target":"urn:dynamos:dataset:VU:wageGap"}}`
 }
 
+// TestNegotiationConsumerGetHandler_Success covers #83's status-poll
+// endpoint (GET /:callback/negotiations/:consumerPid), not one of the DSP
+// spec's own Consumer Path Bindings - see the handler's own doc comment.
+func TestNegotiationConsumerGetHandler_Success(t *testing.T) {
+	startFixtureConsumerNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/callback/negotiations/"+fixtureConsumerPid, nil)
+	req.Header.Set("Authorization", testAuthHeader("did:web:surf.example.com"))
+	req.SetPathValue("consumerPid", fixtureConsumerPid)
+	rec := httptest.NewRecorder()
+
+	negotiationConsumerGetHandler(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	var ack negotiationAck
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ack))
+	assert.Equal(t, "REQUESTED", ack.State)
+}
+
+func TestNegotiationConsumerGetHandler_WrongParticipant(t *testing.T) {
+	startFixtureConsumerNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/callback/negotiations/"+fixtureConsumerPid, nil)
+	req.Header.Set("Authorization", testAuthHeader("did:web:someone-else.example.com"))
+	req.SetPathValue("consumerPid", fixtureConsumerPid)
+	rec := httptest.NewRecorder()
+
+	negotiationConsumerGetHandler(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "not-found", ne.Code)
+}
+
+func TestNegotiationConsumerGetHandler_NotFound(t *testing.T) {
+	startFixtureConsumerNegotiationService(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/callback/negotiations/urn:dynamos:negotiation:consumer:VU:missing", nil)
+	req.Header.Set("Authorization", testAuthHeader("did:web:surf.example.com"))
+	req.SetPathValue("consumerPid", "urn:dynamos:negotiation:consumer:VU:missing")
+	rec := httptest.NewRecorder()
+
+	negotiationConsumerGetHandler(rec, req)
+
+	assert.Equal(t, http.StatusNotFound, rec.Code)
+	var ne negotiationError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
+	assert.Equal(t, "not-found", ne.Code)
+}
+
+func TestNegotiationConsumerGetHandler_WrongMethod(t *testing.T) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/callback/negotiations/"+fixtureConsumerPid, nil)
+	rec := httptest.NewRecorder()
+
+	negotiationConsumerGetHandler(rec, req)
+
+	assert.Equal(t, http.StatusMethodNotAllowed, rec.Code)
+}
+
 func TestNegotiationConsumerOffersHandler_Success(t *testing.T) {
 	startFixtureConsumerNegotiationService(t)
 
