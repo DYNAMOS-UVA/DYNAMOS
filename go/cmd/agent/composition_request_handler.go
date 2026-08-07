@@ -14,6 +14,33 @@ import (
 	"go.opencensus.io/trace"
 )
 
+// maxK8sLabelLength is Kubernetes' own limit on a label value
+// (metadata.labels / spec.template.labels). buildLocalJobName's result
+// becomes both a Job resource name (via replaceLastCharacter,
+// deploy_job.go) and the "jobName" label value (deploy_job.go's own
+// Labels) - both bound by this same limit.
+const maxK8sLabelLength = 63
+
+// buildLocalJobName appends dataStewardName and the round counter to
+// jobName, truncating jobName's own tail first if the combined length
+// would exceed maxK8sLabelLength. jobName already ends in a random
+// 8-char guid (lib.GenerateJobName) purely for uniqueness, so
+// truncating its own prefix costs nothing real - the remaining
+// characters plus dataStewardName+counter still disambiguate this
+// specific job round. Without this, a short email-shaped identity
+// (DYNAMOS's only case until DSP's DID identities) always fit under 63
+// bytes by coincidence, but a long did:web identity does not - confirmed
+// live, a real Job creation rejected by the k8s API server ("must be no
+// more than 63 bytes"), see issue #97.
+func buildLocalJobName(jobName, dataStewardName string, counter int) string {
+	suffix := dataStewardName + strconv.Itoa(counter)
+	budget := max(maxK8sLabelLength-len(suffix), 0)
+	if len(jobName) > budget {
+		jobName = jobName[:budget]
+	}
+	return jobName + suffix
+}
+
 func generateJobName(jobName string) (string, error) {
 	if serviceName == "" {
 		return "", fmt.Errorf("env variable DATA_STEWARD_NAME not defined")
@@ -28,7 +55,7 @@ func generateJobName(jobName string) (string, error) {
 	newValue := jobCounter[jobName]
 	jobMutex.Unlock()
 
-	return jobName + dataStewardName + strconv.Itoa(newValue), nil
+	return buildLocalJobName(jobName, dataStewardName, newValue), nil
 }
 
 func watchQueue(ctx context.Context, key string) {
@@ -88,7 +115,7 @@ func compositionRequestHandler(ctx context.Context, compositionRequest *pb.Compo
 		}
 	} else {
 		logger.Sugar().Debugf("value: %v", value)
-		localJobname = compositionRequest.JobName + strings.ToLower(serviceName) + strconv.Itoa(value)
+		localJobname = buildLocalJobName(compositionRequest.JobName, strings.ToLower(serviceName), value)
 	}
 
 	compositionRequest.LocalJobName = localJobname
