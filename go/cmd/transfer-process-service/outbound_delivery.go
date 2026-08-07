@@ -34,6 +34,11 @@ var dspContext = []string{"https://w3id.org/dspace/2025/1/context.jsonld"}
 // treats delivery as an async push, with no synchronous link back to the
 // triggering action. This function uses the same retry shape as
 // negotiation-service's deliverToConsumer.
+//
+// Attaches partyDAT as the Authorization header when configured (issue
+// #93 finding - see partyDAT's own doc comment): a real Consumer's
+// callback handler DAT-verifies this header, unlike the DSP TCK's own
+// mock consumer, which never enforced it.
 func deliverToConsumer(t *TransferProcess, path string, message any) {
 	if t.CallbackAddress == "" {
 		logger.Sugar().Warnw("no callbackAddress stored, skipping delivery", "providerPid", t.ProviderPid, "path", path)
@@ -52,7 +57,16 @@ func deliverToConsumer(t *TransferProcess, path string, message any) {
 	const maxAttempts = 5
 	backoff := 250 * time.Millisecond
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+		req, reqErr := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if reqErr != nil {
+			logger.Sugar().Errorw("failed to build outbound DSP delivery request", "providerPid", t.ProviderPid, "url", url, "error", reqErr)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if partyDAT != "" {
+			req.Header.Set("Authorization", partyDAT)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			if attempt == maxAttempts {
 				logger.Sugar().Errorw("failed to deliver outbound DSP message", "providerPid", t.ProviderPid, "url", url, "attempts", attempt, "error", err)
@@ -100,15 +114,30 @@ type transferRequestAck struct {
 // create-as-consumer call, there is nothing partial to clean up first.
 // Mirrors negotiation-service's sendContractRequest.
 func sendTransferRequest(providerEndpoint, participant string, t *TransferProcess) (string, error) {
-	body, err := json.Marshal(map[string]any{
+	msg := map[string]any{
 		"@context":        dspContext,
 		"@type":           "TransferRequestMessage",
 		"consumerPid":     t.ConsumerPid,
 		"agreementId":     t.AgreementId,
 		"format":          t.Format,
-		"dataAddress":     t.DataAddress,
 		"callbackAddress": t.CallbackAddress,
-	})
+	}
+	// Omit the key entirely when DataAddress is empty, same reasoning
+	// dsp-connector's createTransfer/createConsumerTransfer already
+	// document: a present key with a nil json.RawMessage value marshals
+	// to the JSON literal null, not to a missing field - and unmarshaling
+	// that literal null into a json.RawMessage on the receiving end
+	// stores the 4 bytes "null" as the value, not an empty slice. A
+	// job-less transfer's len(t.DataAddress)==0 guard (see
+	// triggerJobAndDeliver) would then see a false non-empty DataAddress
+	// and try to trigger a job with "null" as the job spec - live-found,
+	// issue #93's demo: this crashed api-gateway's requestHandler with a
+	// nil-map write once the "null" bytes decoded into a nil
+	// map[string]interface{}.
+	if len(t.DataAddress) > 0 {
+		msg["dataAddress"] = t.DataAddress
+	}
+	body, err := json.Marshal(msg)
 	if err != nil {
 		return "", fmt.Errorf("%w: marshaling request: %w", ErrProviderRequestFailed, err)
 	}

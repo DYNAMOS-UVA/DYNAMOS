@@ -29,6 +29,11 @@ var dspContext = []string{"https://w3id.org/dspace/2025/1/context.jsonld"}
 // consumer's own callback listener for this specific negotiation finishes
 // registering, producing a transient 404 that isn't this consumer's fault.
 // Full retry/dead-lettering beyond that remains out of scope.
+//
+// Attaches partyDAT as the Authorization header when configured (issue
+// #93 finding - see partyDAT's own doc comment): a real Consumer's
+// callback handler DAT-verifies this header, unlike the DSP TCK's own
+// mock consumer, which never enforced it.
 func deliverToConsumer(n *Negotiation, path string, message any) {
 	if n.CallbackAddress == "" {
 		logger.Sugar().Warnw("no callbackAddress stored, skipping delivery", "providerPid", n.ProviderPid, "path", path)
@@ -47,7 +52,16 @@ func deliverToConsumer(n *Negotiation, path string, message any) {
 	const maxAttempts = 5
 	backoff := 250 * time.Millisecond
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+		req, reqErr := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if reqErr != nil {
+			logger.Sugar().Errorw("failed to build outbound DSP delivery request", "providerPid", n.ProviderPid, "url", url, "error", reqErr)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if partyDAT != "" {
+			req.Header.Set("Authorization", partyDAT)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			if attempt == maxAttempts {
 				logger.Sugar().Errorw("failed to deliver outbound DSP message", "providerPid", n.ProviderPid, "url", url, "attempts", attempt, "error", err)

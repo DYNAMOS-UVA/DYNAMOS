@@ -35,6 +35,9 @@ func main() {
 	if v := os.Getenv("ETCD_ENDPOINTS"); v != "" {
 		etcdEndpoints = v
 	}
+	if v := os.Getenv("PARTY_DAT"); v != "" {
+		partyDAT = v
+	}
 
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()

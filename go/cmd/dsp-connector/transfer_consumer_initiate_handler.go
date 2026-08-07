@@ -92,7 +92,16 @@ func transferConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ownParticipant := "urn:dynamos:party:" + party
+	// ownParticipant reuses the raw Authorization header this request
+	// itself carried, same as negotiationConsumerInitiateHandler's own
+	// fix (issue #93 live demo finding) - a real remote Provider
+	// DAT-verifies its inbound Authorization header, so a synthesized
+	// "urn:dynamos:party:X" label can never pass that check. n.ProviderPid
+	// (the agreementId below) was validated on the remote Provider's
+	// negotiation-service against n.Participant, which is this same real
+	// DID - the outbound transfer request has to assert the identical
+	// identity or validateAgreementId's ownership check fails there too.
+	ownParticipant := r.Header.Get("Authorization")
 	callbackAddress := connectorBaseURL + apiVersion + "/callback"
 
 	t, err := createConsumerTransfer(n.ProviderEndpoint, ownParticipant, n.RemoteParticipant, n.ProviderPid, body.Format, callbackAddress, body.DataAddress)
