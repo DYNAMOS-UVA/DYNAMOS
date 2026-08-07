@@ -17,7 +17,16 @@ type consumerNegotiationRecord struct {
 	ProviderPid       string `json:"providerPid"`
 	ConsumerPid       string `json:"consumerPid"`
 	RemoteParticipant string `json:"remoteParticipant"`
-	State             string `json:"state"`
+	// ProviderEndpoint was not needed until issue #93's transfer-consumer
+	// initiate handler: it looks up a FINALIZED negotiation to learn who
+	// the remote Provider is and where to send the outbound Transfer
+	// Request Message, instead of re-deriving either from the initiate
+	// caller (see transfer_consumer_initiate_handler.go). agreementId
+	// itself is n.ProviderPid, per dsp-connector's own established
+	// convention (validateAgreementId in transfer_handler.go) - the
+	// Agreement object's own ODRL @id is never needed here.
+	ProviderEndpoint string `json:"providerEndpoint,omitempty"`
+	State            string `json:"state"`
 }
 
 // checkConsumerNegotiationOwnership reports ErrNegotiationForbidden if

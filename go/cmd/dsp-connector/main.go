@@ -113,6 +113,11 @@ func main() {
 	// it ahead of the "/transfers/{providerPid}" wildcard below for that
 	// exact path, same as the negotiations routes above.
 	mux.HandleFunc(apiVersion+"/transfers/request", transferRequestInitHandler)
+	// "/transfers/initiate" is DYNAMOS's own Consumer-role entry point
+	// (issue #93, not part of the DSP spec itself) - the transfer-side
+	// counterpart to "/negotiations/initiate" above. Same literal-
+	// segment-beats-wildcard reasoning.
+	mux.HandleFunc(apiVersion+"/transfers/initiate", transferConsumerInitiateHandler)
 	mux.HandleFunc(apiVersion+"/transfers/{providerPid}", transferGetHandler)
 	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/start", transferStartHandler)
 	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/completion", transferCompletionHandler)
