@@ -18,7 +18,7 @@ spec:
       containers:
       - name: negotiation-service-uva
         image: {{ .Values.dockerArtifactAccount }}/negotiation-service:{{ .Values.branchNameTag }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
         env:

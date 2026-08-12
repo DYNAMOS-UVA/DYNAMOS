@@ -161,8 +161,25 @@ helm upgrade -i -f ${core_chart}/values.yaml core ${core_chart} --set hostPath=$
 echo "Syncing RabbitMQ normal_user password..."
 echo "  Waiting for RabbitMQ to be ready..."
 kubectl rollout status deployment/rabbitmq -n core --timeout=120s
-kubectl exec -n core deployment/rabbitmq -c rabbitmq -- \
-    rabbitmqctl change_password normal_user "${rabbit_pw}"
+
+# Pod-ready (above) only means the container passed its readiness probe -
+# the RabbitMQ Erlang node inside can still be mid-boot, with the "rabbit"
+# app itself not started yet ("this command requires the 'rabbit' app to be
+# running" from rabbitmqctl). Most visible right after the whole kind node
+# was just cold-started (many pods booting at once) - retry instead of
+# failing the whole setup on a few seconds of normal startup lag.
+for attempt in 1 2 3 4 5 6 7 8 9 10; do
+    if kubectl exec -n core deployment/rabbitmq -c rabbitmq -- \
+        rabbitmqctl change_password normal_user "${rabbit_pw}"; then
+        break
+    fi
+    if [[ "$attempt" -eq 10 ]]; then
+        echo "  RabbitMQ still not accepting rabbitmqctl commands after 10 attempts - giving up."
+        exit 1
+    fi
+    echo "  rabbit app not ready yet (attempt ${attempt}/10), retrying in 3s..."
+    sleep 3
+done
 echo "  RabbitMQ password synced."
 
 sleep 3
@@ -204,9 +221,5 @@ sleep 1
 
 echo "Installing api gateway..."
 helm upgrade -i -f "${api_gw_chart}/values.yaml" api-gateway ${api_gw_chart}
-
-echo ""
-echo "Finished setting up DYNAMOS"
-echo "  Run ./pf.sh inside the dev container to start port-forwards."
 
 exit 0

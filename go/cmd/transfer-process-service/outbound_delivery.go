@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"time"
 )
@@ -32,6 +34,11 @@ var dspContext = []string{"https://w3id.org/dspace/2025/1/context.jsonld"}
 // treats delivery as an async push, with no synchronous link back to the
 // triggering action. This function uses the same retry shape as
 // negotiation-service's deliverToConsumer.
+//
+// Attaches partyDAT as the Authorization header when configured (issue
+// #93 finding - see partyDAT's own doc comment): a real Consumer's
+// callback handler DAT-verifies this header, unlike the DSP TCK's own
+// mock consumer, which never enforced it.
 func deliverToConsumer(t *TransferProcess, path string, message any) {
 	if t.CallbackAddress == "" {
 		logger.Sugar().Warnw("no callbackAddress stored, skipping delivery", "providerPid", t.ProviderPid, "path", path)
@@ -50,7 +57,16 @@ func deliverToConsumer(t *TransferProcess, path string, message any) {
 	const maxAttempts = 5
 	backoff := 250 * time.Millisecond
 	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		resp, err := client.Post(url, "application/json", bytes.NewReader(body))
+		req, reqErr := http.NewRequest(http.MethodPost, url, bytes.NewReader(body))
+		if reqErr != nil {
+			logger.Sugar().Errorw("failed to build outbound DSP delivery request", "providerPid", t.ProviderPid, "url", url, "error", reqErr)
+			return
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if partyDAT != "" {
+			req.Header.Set("Authorization", partyDAT)
+		}
+		resp, err := client.Do(req)
 		if err != nil {
 			if attempt == maxAttempts {
 				logger.Sugar().Errorw("failed to deliver outbound DSP message", "providerPid", t.ProviderPid, "url", url, "attempts", attempt, "error", err)
@@ -71,4 +87,86 @@ func deliverToConsumer(t *TransferProcess, path string, message any) {
 		time.Sleep(backoff)
 		backoff *= 2
 	}
+}
+
+// ErrProviderRequestFailed marks any failure of the outbound Transfer
+// Request Message to a remote Provider: a network error, a non-2xx
+// response, or a 2xx response missing providerPid. Distinct from
+// ErrTransferNotFound/ErrInvalidTransition - this is an upstream failure,
+// so the internal API maps it to 502, not 404/409. Mirrors
+// negotiation-service's own ErrProviderRequestFailed.
+var ErrProviderRequestFailed = errors.New("outbound transfer request to provider failed")
+
+// transferRequestAck is the minimal shape needed out of the remote
+// Provider's response to an initiating Transfer Request Message - the DSP
+// TransferProcess ack (transfer-process-schema.json), just the field this
+// side needs to adopt the transfer (providerPid).
+type transferRequestAck struct {
+	ProviderPid string `json:"providerPid"`
+}
+
+// sendTransferRequest POSTs the initiating Transfer Request Message to a
+// remote Provider's transfers/request endpoint, synchronously - unlike
+// deliverToConsumer's fire-and-forget push, the caller
+// (transfersConsumerCollectionHandler) needs the real providerPid back
+// before it can persist anything durable, so this is a single attempt, no
+// retry: on failure the internal-API caller can just retry the whole
+// create-as-consumer call, there is nothing partial to clean up first.
+// Mirrors negotiation-service's sendContractRequest.
+func sendTransferRequest(providerEndpoint, participant string, t *TransferProcess) (string, error) {
+	msg := map[string]any{
+		"@context":        dspContext,
+		"@type":           "TransferRequestMessage",
+		"consumerPid":     t.ConsumerPid,
+		"agreementId":     t.AgreementId,
+		"format":          t.Format,
+		"callbackAddress": t.CallbackAddress,
+	}
+	// Omit the key entirely when DataAddress is empty, same reasoning
+	// dsp-connector's createTransfer/createConsumerTransfer already
+	// document: a present key with a nil json.RawMessage value marshals
+	// to the JSON literal null, not to a missing field - and unmarshaling
+	// that literal null into a json.RawMessage on the receiving end
+	// stores the 4 bytes "null" as the value, not an empty slice. A
+	// job-less transfer's len(t.DataAddress)==0 guard (see
+	// triggerJobAndDeliver) would then see a false non-empty DataAddress
+	// and try to trigger a job with "null" as the job spec - live-found,
+	// issue #93's demo: this crashed api-gateway's requestHandler with a
+	// nil-map write once the "null" bytes decoded into a nil
+	// map[string]interface{}.
+	if len(t.DataAddress) > 0 {
+		msg["dataAddress"] = t.DataAddress
+	}
+	body, err := json.Marshal(msg)
+	if err != nil {
+		return "", fmt.Errorf("%w: marshaling request: %w", ErrProviderRequestFailed, err)
+	}
+
+	req, err := http.NewRequest(http.MethodPost, providerEndpoint+"/transfers/request", bytes.NewReader(body))
+	if err != nil {
+		return "", fmt.Errorf("%w: building request: %w", ErrProviderRequestFailed, err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", participant)
+
+	client := http.Client{Timeout: 20 * time.Second}
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", fmt.Errorf("%w: %w", ErrProviderRequestFailed, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 300 {
+		return "", fmt.Errorf("%w: provider returned status %d", ErrProviderRequestFailed, resp.StatusCode)
+	}
+
+	var ack transferRequestAck
+	if err := json.NewDecoder(resp.Body).Decode(&ack); err != nil {
+		return "", fmt.Errorf("%w: decoding provider response: %w", ErrProviderRequestFailed, err)
+	}
+	if ack.ProviderPid == "" {
+		return "", fmt.Errorf("%w: provider response has no providerPid", ErrProviderRequestFailed)
+	}
+
+	return ack.ProviderPid, nil
 }

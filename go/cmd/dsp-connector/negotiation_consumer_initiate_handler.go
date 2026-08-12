@@ -89,7 +89,20 @@ func negotiationConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ownParticipant := "urn:dynamos:party:" + party
+	// ownParticipant is the raw Authorization header this request itself
+	// carried, forwarded as-is - not a synthesized "urn:dynamos:party:X"
+	// label. A real remote Provider DAT-verifies its own inbound
+	// Authorization header (participantFromRequest, see catalog_handler.go);
+	// a synthesized label is not a signed token and can never pass that
+	// check. This is the same "single shared Authorization header for the
+	// whole harness run" convention this handler's own doc comment already
+	// established for remoteParticipant, extended to DYNAMOS's own outbound
+	// assertion: whoever called /negotiations/initiate already presented a
+	// real, verifiable credential, so reuse it rather than fabricate a new
+	// unverifiable one. First surfaced live (issue #93's demo): the CN_C TCK
+	// group never caught this, since DYNAMOS-as-Consumer there talks to the
+	// TCK's own mock Provider, which never DAT-verified this header at all.
+	ownParticipant := r.Header.Get("Authorization")
 	callbackAddress := connectorBaseURL + apiVersion + "/callback"
 
 	n, err := createConsumerNegotiation(body.ConnectorAddress, ownParticipant, remoteParticipant, callbackAddress, offer)

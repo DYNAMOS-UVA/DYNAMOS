@@ -57,6 +57,9 @@ func main() {
 	if v := os.Getenv("CONSUMER_AUTO_NEGOTIATE"); v == "false" {
 		consumerAutoNegotiate = false
 	}
+	if v := os.Getenv("PARTY_DAT"); v != "" {
+		partyDAT = v
+	}
 
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()

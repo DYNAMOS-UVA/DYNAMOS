@@ -108,11 +108,31 @@ func main() {
 	// routes above (no trailing segment), so no collision.
 	mux.HandleFunc(apiVersion+"/callback/negotiations/{consumerPid}", negotiationConsumerGetHandler)
 
+	// Transfer Process Consumer Path Bindings (issue #93) - DYNAMOS itself
+	// plays Consumer here, same "/callback" literal-prefix reasoning as the
+	// negotiation Consumer routes above. This is the handler set that
+	// replaces the 2026-08-06 session's throwaway echo-listener pod: real
+	// pushed data now lands on dsp-connector itself.
+	mux.HandleFunc(apiVersion+"/callback/transfers/{consumerPid}/start", transferConsumerStartHandler)
+	mux.HandleFunc(apiVersion+"/callback/transfers/{consumerPid}/completion", transferConsumerCompletionHandler)
+	mux.HandleFunc(apiVersion+"/callback/transfers/{consumerPid}/suspension", transferConsumerSuspensionHandler)
+	mux.HandleFunc(apiVersion+"/callback/transfers/{consumerPid}/termination", transferConsumerTerminationHandler)
+	// Not a DSP Consumer Path Binding itself - DYNAMOS's own status/data
+	// poll (see transferConsumerStatus's own doc comment). Different path
+	// shape than the 4 routes above (no trailing segment), so no collision,
+	// same as negotiationConsumerGetHandler's own registration above.
+	mux.HandleFunc(apiVersion+"/callback/transfers/{consumerPid}", transferConsumerGetHandler)
+
 	// Transfer Process provider endpoints (T3.1.4, docs/transfer/dsp-transfer-state-machine.md).
 	// "/transfers/request" is a literal segment, so Go 1.22 ServeMux matches
 	// it ahead of the "/transfers/{providerPid}" wildcard below for that
 	// exact path, same as the negotiations routes above.
 	mux.HandleFunc(apiVersion+"/transfers/request", transferRequestInitHandler)
+	// "/transfers/initiate" is DYNAMOS's own Consumer-role entry point
+	// (issue #93, not part of the DSP spec itself) - the transfer-side
+	// counterpart to "/negotiations/initiate" above. Same literal-
+	// segment-beats-wildcard reasoning.
+	mux.HandleFunc(apiVersion+"/transfers/initiate", transferConsumerInitiateHandler)
 	mux.HandleFunc(apiVersion+"/transfers/{providerPid}", transferGetHandler)
 	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/start", transferStartHandler)
 	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/completion", transferCompletionHandler)
