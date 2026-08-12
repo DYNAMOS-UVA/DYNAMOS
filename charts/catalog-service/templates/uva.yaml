@@ -18,7 +18,7 @@ spec:
       containers:
       - name: catalog-service-uva
         image: {{ .Values.dockerArtifactAccount }}/catalog-service:{{ .Values.branchNameTag }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
         env:

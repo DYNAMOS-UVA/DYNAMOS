@@ -20,7 +20,7 @@ import (
 // the same role loadtest and sql-test already have. This design needs
 // no change to api-gateway, orchestrator, policy-enforcer, or agent.
 // The non-DSP job pipeline stays untouched.
-var jobExecutionClient = http.Client{Timeout: 40 * time.Second}
+var jobExecutionClient = http.Client{Timeout: 130 * time.Second}
 
 // triggerJobAndDeliver runs T3.2's job-trigger step for a REQUESTED
 // transfer. Call it in its own goroutine. A slow or blocked job then

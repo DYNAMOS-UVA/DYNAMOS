@@ -18,7 +18,7 @@ spec:
       containers:
       - name: dsp-connector-vu
         image: {{ .Values.dockerArtifactAccount }}/dsp-connector:{{ .Values.branchNameTag }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
         env:

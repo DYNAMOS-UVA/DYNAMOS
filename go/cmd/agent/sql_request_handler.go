@@ -25,7 +25,7 @@ func sqlDataRequestHandler() http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		logger.Debug("Entering sqlDataRequestHandler")
 
-		ctxWithTimeout, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+		ctxWithTimeout, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 		defer cancel()
 
 		// Get the sql data request 
