@@ -138,6 +138,12 @@ func main() {
 	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/completion", transferCompletionHandler)
 	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/termination", transferTerminationHandler)
 	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/suspension", transferSuspensionHandler)
+	// The real HttpData-PULL endpoint (issue #94) - a genuine external
+	// consumer's dataplane fetches its result from here, at the URL
+	// transfer-process-service's own EDR points it at. Same
+	// literal-third-segment shape as start/completion/termination/suspension
+	// above, no collision risk.
+	mux.HandleFunc(apiVersion+"/transfers/{providerPid}/result", transferResultHandler)
 
 	logger.Sugar().Infow("Starting dsp-connector http server", "port", port, "apiVersion", apiVersion)
 	if err := http.ListenAndServe(port, mux); err != nil {

@@ -63,7 +63,7 @@ func TestGenerateJobName(t *testing.T) {
 	}{
 		{"email identity", "example.two@cloud.com", 8, "example-two-"},
 		{"DID identity", "did:web:example.com", 8, "did-web-example-com-"},
-		{"DID identity with port", "did:web:localhost%3A9999", 8, "did-web-localhost-3A9999-"},
+		{"DID identity with port", "did:web:localhost%3A9999", 8, "did-web-localhost-3a9999-"},
 	}
 
 	for _, tt := range tests {

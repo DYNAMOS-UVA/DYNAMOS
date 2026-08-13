@@ -38,6 +38,27 @@ func main() {
 	if v := os.Getenv("PARTY_DAT"); v != "" {
 		partyDAT = v
 	}
+	if v := os.Getenv("STS_TOKEN_URL"); v != "" {
+		stsTokenURL = v
+	}
+	if v := os.Getenv("STS_CLIENT_ID"); v != "" {
+		stsClientID = v
+	}
+	if v := os.Getenv("STS_CLIENT_SECRET"); v != "" {
+		stsClientSecret = v
+	}
+	if v := os.Getenv("STS_SCOPE"); v != "" {
+		stsScope = v
+	}
+	if v := os.Getenv("DEFAULT_JOB_TYPE"); v != "" {
+		defaultJobType = v
+	}
+	if v := os.Getenv("DEFAULT_JOB_REQUEST"); v != "" {
+		defaultJobRequest = json.RawMessage(v)
+	}
+	if v := os.Getenv("CONNECTOR_BASE_URL"); v != "" {
+		connectorBaseURL = v
+	}
 
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()
