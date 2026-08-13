@@ -45,6 +45,38 @@ func getNegotiationOrError(w http.ResponseWriter, kind Kind, id string) (*Negoti
 	return nil, false
 }
 
+// negotiationByAgreementHandler implements
+// GET /internal/v1/negotiations/by-agreement/{agreementId} - resolves a real
+// Agreement's own "@id" to its owning Provider-role negotiation, via
+// store.SaveAgreementIndex's index. dsp-connector's validateAgreementId
+// calls this only as a fallback, after a providerPid-shaped lookup already
+// missed - see that function's own doc comment for why both paths exist.
+func negotiationByAgreementHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		writeInternalError(w, http.StatusMethodNotAllowed, "method-not-allowed", "method not allowed")
+		return
+	}
+
+	agreementID := r.PathValue("agreementId")
+	providerPid, err := store.GetProviderPidByAgreementID(agreementID)
+	if err != nil {
+		if errors.Is(err, ErrNegotiationNotFound) {
+			writeInternalError(w, http.StatusNotFound, "negotiation-not-found", err.Error())
+			return
+		}
+		logger.Sugar().Errorw("failed to resolve agreement index", "agreementId", agreementID, "error", err)
+		writeInternalError(w, http.StatusInternalServerError, "internal-error", "failed to resolve agreement index")
+		return
+	}
+
+	n, ok := getNegotiationOrError(w, KindProvider, providerPid)
+	if !ok {
+		return
+	}
+	writeNegotiation(w, http.StatusOK, n)
+}
+
 // saveOrError persists n and writes a 500 internal-API error on failure.
 func saveOrError(w http.ResponseWriter, n *Negotiation) bool {
 	if err := store.Save(n); err != nil {
@@ -334,6 +366,22 @@ func negotiationAgreementHandler(w http.ResponseWriter, r *http.Request) {
 	n.Agreement = body.Agreement
 	if !saveOrError(w, n) {
 		return
+	}
+
+	// Best-effort: index this Agreement's own "@id" -> providerPid so a
+	// real external consumer's later TransferRequestMessage (which carries
+	// the Agreement's own @id as agreementId, not the providerPid - see
+	// store.go's SaveAgreementIndex) can find this negotiation. Never
+	// fails the request over it - the negotiation itself already saved
+	// successfully, and validateAgreementId's providerPid-first lookup
+	// still works regardless.
+	var agreementForIndex struct {
+		ID string `json:"@id"`
+	}
+	if err := json.Unmarshal(body.Agreement, &agreementForIndex); err == nil && agreementForIndex.ID != "" {
+		if err := store.SaveAgreementIndex(agreementForIndex.ID, n.ProviderPid); err != nil {
+			logger.Sugar().Errorw("failed to index agreement by its own @id", "providerPid", n.ProviderPid, "agreementId", agreementForIndex.ID, "error", err)
+		}
 	}
 
 	deliverToConsumer(n, "agreement", map[string]any{
