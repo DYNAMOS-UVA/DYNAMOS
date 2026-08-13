@@ -58,8 +58,24 @@ func deliverToConsumer(n *Negotiation, path string, message any) {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if partyDAT != "" {
-			req.Header.Set("Authorization", partyDAT)
+		// Fetched fresh per attempt, not once for the whole retry loop: a
+		// real DCP verifier single-uses each token's "jti" (anti-replay),
+		// so resending the same token on a retry gets rejected as an
+		// expired/reused JTI even though the request itself is a genuine
+		// retry, not a replay attack.
+		authHeader := ""
+		if stsTokenURL != "" && stsClientID != "" && stsClientSecret != "" {
+			if token, err := fetchSTSToken(n.Participant); err != nil {
+				logger.Sugar().Errorw("failed to fetch STS token for outbound delivery, falling back to partyDAT", "providerPid", n.ProviderPid, "audience", n.Participant, "attempt", attempt, "error", err)
+			} else {
+				authHeader = "Bearer " + token
+			}
+		}
+		if authHeader == "" && partyDAT != "" {
+			authHeader = "Bearer " + partyDAT
+		}
+		if authHeader != "" {
+			req.Header.Set("Authorization", authHeader)
 		}
 		resp, err := client.Do(req)
 		if err != nil {

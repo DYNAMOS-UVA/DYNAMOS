@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	fixtureDID = "did:web:fixture-did.dsp-connector.svc.cluster.local"
+	fixtureDID = "did:web:fixture-did.dsp-connector.svc.cluster.local%3A31464"
 	party      = "VU"
 	datasetID  = "wageGap"
 )
@@ -69,6 +69,7 @@ func main() {
 	dat := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
 		"iss": fixtureDID,
 	})
+	dat.Header["kid"] = fixtureDID + "#key-1"
 	datSigned, err := dat.SignedString(priv)
 	if err != nil {
 		panic(err)

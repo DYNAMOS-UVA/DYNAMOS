@@ -64,7 +64,7 @@ func deliverToConsumer(t *TransferProcess, path string, message any) {
 		}
 		req.Header.Set("Content-Type", "application/json")
 		if partyDAT != "" {
-			req.Header.Set("Authorization", partyDAT)
+			req.Header.Set("Authorization", "Bearer "+partyDAT)
 		}
 		resp, err := client.Do(req)
 		if err != nil {

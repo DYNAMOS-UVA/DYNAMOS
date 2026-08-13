@@ -39,3 +39,23 @@ var etcdEndpoints = "http://etcd-0.etcd-headless.core.svc.cluster.local:2379,htt
 // (works against the TCK, 401s against a real DAT-enforcing consumer)
 // instead of breaking outright.
 var partyDAT = ""
+
+// stsTokenURL/stsClientID/stsClientSecret, when all non-empty, switch
+// deliverToConsumer from the static partyDAT above to a real, per-delivery
+// DCP self-issued token minted live from an IdentityHub STS endpoint
+// (fetchSTSToken, sts_client.go) - audience-bound and short-lived, carrying
+// a real Issuer-issued credential chain, unlike partyDAT's long-lived
+// self-signed one. Found necessary demoing against a real, spec-strict DCP
+// verifier (issue #94): it rejects partyDAT's bare "iss"-only JWT outright
+// ("sub"/"aud"/"exp"/"token" claims required). Empty (the default) keeps
+// today's static-partyDAT behavior unchanged, same "no identity to assert
+// yet" degradation this whole config block already documents - additive,
+// not a replacement, per ADR-008.
+var stsTokenURL = ""
+var stsClientID = ""
+var stsClientSecret = ""
+
+// stsScope is the DCP credential scope requested from the STS (see
+// IdentityHub's own edc.iam.dcp.scopes.* config) - defaults to the
+// membership scope, the one every MVD-issued participant carries.
+var stsScope = "org.eclipse.dspace.dcp.vc.type:MembershipCredential:read"
