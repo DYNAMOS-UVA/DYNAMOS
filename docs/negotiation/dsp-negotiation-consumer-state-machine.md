@@ -74,5 +74,4 @@ DYNAMOS keeps playing Provider too - the two roles aren't exclusive, a single `d
 - [[DSP Contract Negotiation State Machine]] (`dsp-negotiation-state-machine.md`) - the T2.1 provider-role doc this one mirrors
 - [[phase2-contract-negotiation-issues]] - original provider-role issue set, source of the "deferred" note this doc resolves
 - [[2026-08-03-standup-questions]] - identity model, consumer priority, consortium agreement ID, and negotiation-trigger decisions this doc's mapping section relies on
-- [[ADR-008 DSP Layer Strictly Additive]] - standing constraint this and all Phase 2/3 work is built under
 - [[dsp-connector]], [[negotiation-service]] - existing modules this phase extends

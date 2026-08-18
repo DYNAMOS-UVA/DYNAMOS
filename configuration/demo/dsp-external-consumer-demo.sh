@@ -369,7 +369,7 @@ negotiation_menu() {
 # makes DataAddress non-empty, so Format stays "HttpData-PULL" (the real
 # DSP transferType) instead - vu's agent has no such route, 404, transfer
 # TERMINATED. This is deliberate on DYNAMOS's side (see that function's own
-# long comment: ADR-008, TCK TP:03-01/03-02 negative-test preservation),
+# long comment: TCK TP:03-01/03-02 negative-test preservation),
 # not a bug this script can work around - a real fix would mean deciding
 # to decouple Format-remapping from the DataAddress-empty check, a
 # TCK-compliance tradeoff worth a real conversation, not a silent change
