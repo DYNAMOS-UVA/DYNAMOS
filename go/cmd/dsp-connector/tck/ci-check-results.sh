@@ -2,8 +2,9 @@
 # Checks a DSP TCK run's raw log against ci-expected-passing.txt - the CI
 # workflow's own allowlist of currently-verified-passing tests (#83's CI
 # workflow, go-tests.yml). A test id not listed in the allowlist is not
-# checked either way (e.g. the TP group's known hangs against a real
-# connector, out of scope for now) - every id that IS listed must show
+# checked either way (e.g. TP's 12 other sub-tests, which hang against a
+# real connector - a TCK harness limitation, see tck.properties:122-158 -
+# only TP:03-01/TP:03-02 are listed) - every id that IS listed must show
 # SUCCESSFUL in the log, or the job fails.
 #
 # Usage: ./ci-check-results.sh <log-file> <allowlist-file>

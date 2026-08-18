@@ -113,6 +113,5 @@ This is the concrete mechanism behind "data is now available to the Consumer" in
 ## Related
 
 - [[phase2-contract-negotiation-issues]] - the drafted T2.1-T2.6 issue set this doc's mapping section restates
-- [[ADR-008 DSP Layer Strictly Additive]] - standing constraint this and all Phase 2 work is built under
 - `docs/catalog/dynamos-catalog-schema.md` - the T1.1 precedent this doc follows the shape of
 - [[dsp-connector]], [[catalog-service]] - existing modules this phase extends

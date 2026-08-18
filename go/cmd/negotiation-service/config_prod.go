@@ -50,7 +50,7 @@ var partyDAT = ""
 // ("sub"/"aud"/"exp"/"token" claims required). Empty (the default) keeps
 // today's static-partyDAT behavior unchanged, same "no identity to assert
 // yet" degradation this whole config block already documents - additive,
-// not a replacement, per ADR-008.
+// not a replacement.
 var stsTokenURL = ""
 var stsClientID = ""
 var stsClientSecret = ""

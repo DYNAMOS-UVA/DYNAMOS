@@ -16,7 +16,7 @@ import (
 // jobExecutionClient calls api-gateway's own public data-request entry
 // point, the same /api/v1/requestApproval endpoint sqlDataRequest
 // ultimately uses (see the T3.2 planning note in
-// docs/transfer/dsp-transfer-state-machine.md, and ADR-008).
+// docs/transfer/dsp-transfer-state-machine.md).
 // transfer-process-service uses it purely as an external HTTP caller,
 // the same role loadtest and sql-test already have. This design needs
 // no change to api-gateway, orchestrator, policy-enforcer, or agent.
@@ -63,7 +63,7 @@ func triggerJobAndDeliver(id string) {
 	// safety (rejecting invalid transitions), over the driven tests,
 	// which only verify that this specific implementation has autonomous
 	// business logic to fabricate - DYNAMOS deliberately does not have
-	// that for a job-less transfer. See ADR-008.
+	// that for a job-less transfer.
 	//
 	// defaultJobType/defaultJobRequest (issue #94) are the one, deliberate,
 	// opt-in exception: a genuine external DSP consumer has no way to know
