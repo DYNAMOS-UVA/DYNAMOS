@@ -63,8 +63,22 @@ func deliverToConsumer(t *TransferProcess, path string, message any) {
 			return
 		}
 		req.Header.Set("Content-Type", "application/json")
-		if partyDAT != "" {
-			req.Header.Set("Authorization", partyDAT)
+		// Fetched fresh per attempt - see negotiation-service's own
+		// deliverToConsumer for why (a real DCP verifier single-uses each
+		// token's "jti").
+		authHeader := ""
+		if stsTokenURL != "" && stsClientID != "" && stsClientSecret != "" {
+			if token, err := fetchSTSToken(t.Participant); err != nil {
+				logger.Sugar().Errorw("failed to fetch STS token for outbound delivery, falling back to partyDAT", "providerPid", t.ProviderPid, "audience", t.Participant, "attempt", attempt, "error", err)
+			} else {
+				authHeader = "Bearer " + token
+			}
+		}
+		if authHeader == "" && partyDAT != "" {
+			authHeader = "Bearer " + partyDAT
+		}
+		if authHeader != "" {
+			req.Header.Set("Authorization", authHeader)
 		}
 		resp, err := client.Do(req)
 		if err != nil {

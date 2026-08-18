@@ -46,9 +46,14 @@ func GenerateJobName(identity string, length int) string {
 		namePart = identity[:atIndex]
 	}
 
-	// Remove special characters and replace with hyphen
+	// Remove special characters and replace with hyphen, then lowercase -
+	// Kubernetes Job names must be a lowercase RFC 1123 subdomain. A
+	// did:web identity's percent-encoded port (e.g. "%3A7083") sanitizes
+	// down to a literal uppercase "3A", which every k8s Job creation using
+	// this name then rejects outright - live-found against a real external
+	// DID identity, issue #94.
 	re := regexp.MustCompile(`[^a-zA-Z0-9]+`)
-	namePart = re.ReplaceAllString(namePart, "-")
+	namePart = strings.ToLower(re.ReplaceAllString(namePart, "-"))
 
 	// Generate a random GUID of the given length
 	guid := uuid.New().String()

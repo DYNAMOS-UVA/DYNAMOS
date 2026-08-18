@@ -60,6 +60,18 @@ func main() {
 	if v := os.Getenv("PARTY_DAT"); v != "" {
 		partyDAT = v
 	}
+	if v := os.Getenv("STS_TOKEN_URL"); v != "" {
+		stsTokenURL = v
+	}
+	if v := os.Getenv("STS_CLIENT_ID"); v != "" {
+		stsClientID = v
+	}
+	if v := os.Getenv("STS_CLIENT_SECRET"); v != "" {
+		stsClientSecret = v
+	}
+	if v := os.Getenv("STS_SCOPE"); v != "" {
+		stsScope = v
+	}
 
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()
@@ -69,6 +81,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	mux.HandleFunc("/internal/v1/negotiations", negotiationsCollectionHandler)
+	mux.HandleFunc("GET /internal/v1/negotiations/by-agreement/{agreementId}", negotiationByAgreementHandler)
 	mux.HandleFunc("/internal/v1/negotiations/{id}", negotiationHandler)
 	// Method-qualified ("POST /...", not "/..."): an unqualified pattern
 	// counts as matching every method for Go 1.22 ServeMux's own overlap

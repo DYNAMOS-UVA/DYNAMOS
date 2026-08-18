@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -63,8 +64,23 @@ func triggerJobAndDeliver(id string) {
 	// which only verify that this specific implementation has autonomous
 	// business logic to fabricate - DYNAMOS deliberately does not have
 	// that for a job-less transfer. See ADR-008.
+	//
+	// defaultJobType/defaultJobRequest (issue #94) are the one, deliberate,
+	// opt-in exception: a genuine external DSP consumer has no way to know
+	// DYNAMOS's own job-spec shape, so it can never send a real dataAddress
+	// - the same job-less shape the TCK's negative tests above exercise.
+	// Both configs are empty unless a specific party deployment sets them
+	// (env, not code), so every existing caller - the TCK, DYNAMOS's own
+	// consumer role, any party that hasn't opted in - degrades to exactly
+	// the passive behavior above, byte-for-byte. Set, they supply the one
+	// canned query this demo's dataset actually answers, in place of a
+	// dataAddress no real external consumer could ever have supplied.
 	if len(t.DataAddress) == 0 {
-		return
+		if defaultJobType == "" || len(defaultJobRequest) == 0 {
+			return
+		}
+		t.Format = "dynamos:" + defaultJobType
+		t.DataAddress = defaultJobRequest
 	}
 
 	result, err := requestJobExecution(t)
@@ -149,6 +165,38 @@ func requestJobExecution(t *TransferProcess) (json.RawMessage, error) {
 	return json.RawMessage(respBody), nil
 }
 
+// wireDataAddress builds the DataAddress that actually goes out on the DSP
+// wire for t's TransferStartMessage. DYNAMOS's own convention - the raw job
+// result, inline - only ever worked DYNAMOS-to-DYNAMOS: a real external
+// EDC consumer's strict TransferStartMessage validation requires a genuine
+// DataAddress/EDR (an endpoint to pull from, not the data itself), and
+// rejects the inline shape outright (confirmed live against MVD, issue
+// #94). When connectorBaseURL is configured, this builds that real EDR,
+// pointing at dsp-connector's own GET /transfers/{providerPid}/result -
+// DAT-verified and ownership-checked exactly like every other Provider-role
+// route (transfer_result_handler.go), so no bespoke pull-token scheme was
+// invented for this: the same real DCP identity that negotiated and
+// requested the transfer is what dsp-connector expects to see pull it.
+// connectorBaseURL empty (the default) falls back to t.DataAddress itself,
+// unchanged - DYNAMOS-to-DYNAMOS demo #1 keeps working exactly as before.
+func wireDataAddress(t *TransferProcess) json.RawMessage {
+	if connectorBaseURL == "" {
+		return t.DataAddress
+	}
+
+	edr := map[string]any{
+		"@type":        "DataAddress",
+		"endpointType": "https://w3id.org/idsa/v4.1/HTTP",
+		"endpoint":     connectorBaseURL + "/transfers/" + url.PathEscape(t.ProviderPid) + "/result",
+	}
+	edrBytes, err := json.Marshal(edr)
+	if err != nil {
+		logger.Sugar().Errorw("job completion: failed to build EDR, falling back to inline result", "providerPid", t.ProviderPid, "error", err)
+		return t.DataAddress
+	}
+	return edrBytes
+}
+
 // markStartedThenCompleted moves a transfer from REQUESTED all the way
 // to COMPLETED, once the job pipeline call has already returned a
 // result. It moves through STARTED first: transition never allows
@@ -176,6 +224,11 @@ func markStartedThenCompleted(id string, result json.RawMessage) {
 		logger.Sugar().Warnw("job completion: transfer left REQUESTED before the job pipeline replied, dropping result", "id", id, "state", t.State)
 		return
 	}
+	// t.DataAddress keeps the raw result regardless of connectorBaseURL -
+	// dsp-connector's GET /transfers/{providerPid}/result (issue #94) reads
+	// it straight from here via the same internal API this store already
+	// serves. wireDataAddress is what actually goes out on the wire, which
+	// diverges from it only when a real pull endpoint is configured.
 	t.DataAddress = result
 	if err := store.Save(t); err != nil {
 		logger.Sugar().Errorw("job completion: failed to save STARTED transfer", "id", id, "error", err)
@@ -186,7 +239,7 @@ func markStartedThenCompleted(id string, result json.RawMessage) {
 		"@type":       "TransferStartMessage",
 		"providerPid": t.ProviderPid,
 		"consumerPid": t.ConsumerPid,
-		"dataAddress": t.DataAddress,
+		"dataAddress": wireDataAddress(t),
 	})
 
 	if err := t.transition(StateCompleted, StateStarted); err != nil {

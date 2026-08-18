@@ -20,3 +20,9 @@ var etcdEndpoints = "http://localhost:2379"
 // doc comment in config_prod.go. Empty by default in local dev; the TCK
 // harness's own consumer mock doesn't require it.
 var partyDAT = ""
+
+// See config_prod.go's doc comment - empty by default, same degradation.
+var stsTokenURL = ""
+var stsClientID = ""
+var stsClientSecret = ""
+var stsScope = "org.eclipse.dspace.dcp.vc.type:MembershipCredential:read"

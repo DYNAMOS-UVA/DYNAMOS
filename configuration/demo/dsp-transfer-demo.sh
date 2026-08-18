@@ -8,43 +8,21 @@
 #
 # Prerequisites:
 #   - run inside the project's own devcontainer (./dev.sh) - that's where
-#     kubectl/helm/docker already live. Plain docker + a shell is enough
-#     otherwise; --setup installs kind and linkerd itself if missing.
-#   - run this script once with --setup: installs kind/linkerd if not on
-#     PATH, runs dynamos-configuration.sh (creates the kind cluster if
-#     none is reachable, deploys every chart - every chart's own
-#     dynamos1/<service>:main image on Docker Hub is the real, current
-#     build for every service except agent), points agent at
-#     dynamos1/agent:dsp-latest (its issue #97 job-name fix isn't merged
-#     to main yet), and sets two env vars no chart wires up yet
-#     (CONNECTOR_BASE_URL, DID_WEB_SCHEME on dsp-connector). Re-run
-#     --setup after the cluster itself was recreated; plain runs after
-#     that don't need it.
+#     kubectl/helm/docker already live.
+#   - run configuration/demo/setup-demos.sh once first (or again after the
+#     cluster itself was recreated) - this script has no setup step of its
+#     own any more. That script covers dynamos-configuration.sh, agent's
+#     own dsp-latest image tag (issue #97's job-name fix isn't merged to
+#     main yet), and the env vars no chart wires up yet (CONNECTOR_BASE_URL,
+#     DID_WEB_SCHEME on dsp-connector).
 #   - everything else (minting an identity, syncing PARTY_DAT, seeding
-#     UVA's starter policyEnforcer Relation) happens automatically on
-#     every plain run, no separate step needed.
+#     UVA's starter policyEnforcer Relation, the fixture-did identity
+#     server if it's ever missing) happens automatically on every plain
+#     run, no separate step needed.
 #
 # No set -e: this is an interactive loop, one failed request must not kill
 # the whole session.
 set -uo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-KIND_CLUSTER_NAME="dynamos"
-# agent's own chart still defaults to :main, which does not have issue
-# #97's job-name-length fix yet (not merged to main) - dsp-latest is the
-# real Docker Hub tag this branch's own fixed build was pushed under.
-AGENT_IMAGE_TAG="dsp-latest"
-# dynamos1/sql-query:main has no data for the employeeSurvey dataset (its
-# CSVs were only added to this branch's own build) - dsp-latest carries them.
-SQL_QUERY_TAG="dsp-latest"
-KIND_CLI_VERSION="v0.23.0"
-# Pinned to the exact edge release already running in the cluster (its
-# proxy images are literally tagged edge-25.8.1), not "latest" - the
-# latest edge CLI now requires Kubernetes 1.31+, but this kind cluster
-# (created a while ago, never recreated) is still on 1.30.0. linkerd
-# check hard-fails on that mismatch, live-found running --setup for real.
-LINKERD_CLI_VERSION="edge-25.8.1"
 
 SCRATCH_DIR="${TMPDIR:-/tmp}/dsp-transfer-demo"
 mkdir -p "${SCRATCH_DIR}"
@@ -134,100 +112,6 @@ require_tools() {
     done
 }
 
-# ensure_jq installs jq via apt if it's missing - not in the devcontainer's
-# own Dockerfile (live-found running --setup for real, same gap class as
-# kind/linkerd). Runs before require_tools' own hard-fail check so --setup
-# self-heals instead of just reporting the gap.
-ensure_jq() {
-    if command -v jq >/dev/null 2>&1; then
-        return
-    fi
-    log_step "Installing jq"
-    if command -v apt-get >/dev/null 2>&1; then
-        apt-get update -qq >"${SCRATCH_DIR}/jq-install.log" 2>&1 \
-            && apt-get install -y -qq jq >>"${SCRATCH_DIR}/jq-install.log" 2>&1
-    fi
-    if ! command -v jq >/dev/null 2>&1; then
-        log_fail "could not install jq automatically - see ${SCRATCH_DIR}/jq-install.log"
-        log_fail "install it yourself (apt-get install jq, or your OS's equivalent) and re-run --setup"
-        exit 1
-    fi
-    log_ok "jq installed"
-}
-
-# require_tools_setup adds helm on top of require_tools' own list - only
-# --setup needs it (dynamos-configuration.sh's own helm upgrade -i calls),
-# and unlike kind/linkerd there is no safe one-line install for it here
-# (version pinning, checksum verification) - fail with a clear message
-# instead of guessing.
-require_tools_setup() {
-    ensure_jq
-    require_tools
-    if ! command -v helm >/dev/null 2>&1; then
-        log_fail "required tool not found: helm (see https://helm.sh/docs/intro/install/)"
-        exit 1
-    fi
-}
-
-# ---------------------------------------------------------------------------
-# --setup: install missing CLIs, deploy DYNAMOS itself if not already up,
-# then rebuild + redeploy from current source and patch the two env vars
-# no Helm chart wires up yet. Run once (or again after pulling new code, or
-# after the cluster itself got recreated) - not on every plain demo run, a
-# plain run assumes this already happened.
-# ---------------------------------------------------------------------------
-
-# ensure_kind_cli installs the kind binary if it's not on PATH yet - not
-# in the devcontainer's own Dockerfile today (live-found: dynamos-
-# configuration.sh's own auto-create-cluster fallback needs it and failed
-# with "kind: command not found" the first time this was run for real
-# inside the devcontainer). Needs /usr/local/bin to be writable - true
-# inside the devcontainer (runs as root), may need sudo on a bare host.
-ensure_kind_cli() {
-    if command -v kind >/dev/null 2>&1; then
-        log_ok "kind CLI present"
-        return
-    fi
-    log_step "Installing kind CLI (${KIND_CLI_VERSION})"
-    if ! curl -sLo /usr/local/bin/kind \
-        "https://kind.sigs.k8s.io/dl/${KIND_CLI_VERSION}/kind-linux-amd64" 2>"${SCRATCH_DIR}/kind-install.log"; then
-        log_fail "could not install kind to /usr/local/bin - see ${SCRATCH_DIR}/kind-install.log"
-        log_fail "if that path isn't writable here, install kind yourself (sudo) and re-run --setup"
-        exit 1
-    fi
-    chmod +x /usr/local/bin/kind
-    log_ok "kind installed"
-}
-
-# ensure_linkerd_cli installs the linkerd CLI (edge channel, matching the
-# edge-* proxy image the cluster's own charts already reference) if it's
-# not on PATH yet - also not in the devcontainer's Dockerfile despite the
-# cluster itself already having Linkerd installed, live-found the same
-# session as the kind gap above. Only affects this script's own process:
-# exports PATH here so the rest of --setup (which shells out to
-# dynamos-configuration.sh, itself calling linkerd) can find it, but this
-# does not persist to the operator's own shell afterward.
-ensure_linkerd_cli() {
-    if command -v linkerd >/dev/null 2>&1; then
-        log_ok "linkerd CLI present"
-        return
-    fi
-    log_step "Installing linkerd CLI (edge channel)"
-    curl -sL https://run.linkerd.io/install-edge | LINKERD2_VERSION="$LINKERD_CLI_VERSION" sh >"${SCRATCH_DIR}/linkerd-install.log" 2>&1
-    export PATH="${PATH}:${HOME}/.linkerd2/bin"
-    if ! command -v linkerd >/dev/null 2>&1; then
-        log_fail "linkerd install did not land on PATH - see ${SCRATCH_DIR}/linkerd-install.log"
-        exit 1
-    fi
-    log_ok "linkerd installed"
-}
-
-# deploy_dynamos runs the project's own install script - creates the kind
-# cluster itself if none is reachable (dynamos-configuration.sh's own
-# fallback), then deploys every chart. DYNAMOS_ROOT/DYNAMOS_HOST_ROOT are
-# set from this script's own real location instead of trusting the
-# default ("/workspace") in case this ever runs somewhere that is not the
-# devcontainer.
 # ensure_fixture_did creates the fixture-did Deployment+Service if either
 # is missing. Nothing in this repo does this today: no Helm chart, no
 # tracked manifest anywhere (confirmed - grepped the whole repo for it).
@@ -308,117 +192,6 @@ EOF
         log_fail "fixture-did did not come up - is the cluster actually reachable? (see errors above)"
         return 1
     fi
-}
-
-deploy_dynamos() {
-    log_step "Running dynamos-configuration.sh (creates the cluster if needed, deploys every chart)"
-
-    # A kind cluster can exist (docker node container up) while kubectl
-    # still can't see it - the kubeconfig entry never got written/merged,
-    # e.g. created from inside the devcontainer, whose ~/.kube mount is
-    # read-only (project setup). dynamos-configuration.sh's own check only
-    # looks at `kubectl cluster-info`, so a cluster in exactly this state
-    # makes it try to CREATE a new one and fail ("node(s) already exist
-    # for a cluster with the name..."). Self-heal first: if kind itself
-    # already knows about this cluster but kubectl does not, (re-)export
-    # its kubeconfig before delegating. Live-found running --setup for
-    # real this same session.
-    if kind get clusters 2>/dev/null | grep -qx "$KIND_CLUSTER_NAME" && ! kubectl cluster-info >/dev/null 2>&1; then
-        # The node container itself can also just be stopped (docker stop,
-        # a host reboot, ...) - `kind export kubeconfig` needs it running
-        # (it docker-execs into the node to read /etc/kubernetes/admin.conf)
-        # and fails outright otherwise, leaving kubectl unreachable and
-        # dynamos-configuration.sh's own create-cluster fallback blocked too
-        # ("node(s) already exist"). Start any stopped node container for
-        # this cluster before exporting. Live-found running --setup for
-        # real this same session.
-        local node
-        for node in $(docker ps -a --filter "label=io.x-k8s.kind.cluster=${KIND_CLUSTER_NAME}" --filter "status=exited" --format '{{.Names}}' 2>/dev/null); do
-            log_info "kind node container '${node}' exists but is stopped - starting it"
-            docker start "$node" >/dev/null
-        done
-        sleep 3
-
-        log_info "cluster '${KIND_CLUSTER_NAME}' exists but kubectl can't see it - exporting its kubeconfig"
-        kind export kubeconfig --name "$KIND_CLUSTER_NAME"
-    fi
-
-    # dynamos-configuration.sh's own "core" chart references the
-    # linkerd-jaeger namespace, but the same script deliberately skips
-    # installing that extension when its CLI plugin isn't on PATH
-    # (linkerd-jaeger is deprecated upstream, no longer published for
-    # current edge releases - see the script's own comment) - which means
-    # it never will be, on any current setup. A fresh deploy then fails
-    # with `namespaces "linkerd-jaeger" not found` from the core chart.
-    # Create the empty namespace ourselves so that reference resolves -
-    # harmless, does not turn tracing back on. Live-found running --setup
-    # for real this same session.
-    kubectl create namespace linkerd-jaeger --dry-run=client -o yaml | kubectl apply -f - >/dev/null
-
-    log_info "this streams the real script's own output below - it takes a few minutes"
-    DYNAMOS_ROOT="$REPO_ROOT" DYNAMOS_HOST_ROOT="${DYNAMOS_HOST_ROOT:-$REPO_ROOT}" \
-        "${REPO_ROOT}/configuration/dynamos-configuration.sh"
-    if [[ $? -ne 0 ]]; then
-        log_fail "dynamos-configuration.sh failed - see the output above"
-        exit 1
-    fi
-    log_ok "DYNAMOS deployed"
-}
-
-setup_cluster() {
-    require_tools_setup
-    ensure_kind_cli
-    ensure_linkerd_cli
-    deploy_dynamos
-    ensure_fixture_did
-
-    if ! kubectl get nodes >/dev/null 2>&1; then
-        log_fail "kubectl still cannot reach the cluster after deploy_dynamos - see the output above"
-        exit 1
-    fi
-
-    # Every chart's own dynamos1/<service>:main image on Docker Hub is now
-    # the real, current build for catalog-service, dsp-connector,
-    # negotiation-service, transfer-process-service, api-gateway,
-    # orchestrator and policy-enforcer - deploy_dynamos above already
-    # pulled the right thing for all of them, no local rebuild/kind-load/
-    # imagePullPolicy patching needed any more (this used to be a much
-    # longer block; Docker Hub :main was stale or unpublished when it was
-    # written). agent is the one exception: its own job-name-length fix
-    # (issue #97) isn't merged to main yet, so its chart's default :main
-    # doesn't have it - dynamos1/agent:${AGENT_IMAGE_TAG} does (built and
-    # pushed from this branch). Point both agent deployments at that tag;
-    # imagePullPolicy stays Always (the chart's own default) since this is
-    # a real Docker Hub tag now, not a kind-load-only local image.
-    kubectl -n uva set image deployment/uva uva="dynamos1/agent:${AGENT_IMAGE_TAG}" >/dev/null
-    kubectl -n vu set image deployment/vu vu="dynamos1/agent:${AGENT_IMAGE_TAG}" >/dev/null
-
-    # The sql-query compute-job image agent deploys per request is picked at
-    # runtime via the SQL-QUERY_TAG env var (getMicroserviceTag,
-    # go/cmd/agent/deploy_job.go) - falls back to :main if unset. The
-    # employeeSurvey dataset's own CSV data (Employees_UVA.csv/
-    # Employees_VU.csv) only exists in dynamos1/sql-query:${SQL_QUERY_TAG},
-    # not :main, so this must be set for every job-triggering party
-    # (both agent deployments), not just once.
-    kubectl -n uva set env deployment/uva "SQL-QUERY_TAG=${SQL_QUERY_TAG}" >/dev/null
-    kubectl -n vu set env deployment/vu "SQL-QUERY_TAG=${SQL_QUERY_TAG}" >/dev/null
-
-    kubectl -n uva rollout status deployment/uva --timeout=90s >/dev/null 2>&1
-    kubectl -n vu rollout status deployment/vu --timeout=90s >/dev/null 2>&1
-
-    log_step "Setting env vars no Helm chart wires up yet"
-    log_info "CONNECTOR_BASE_URL: dsp-connector-vu needs this to build its own"
-    log_info "outbound callbackAddress - empty by default (charts/dsp-connector's own"
-    log_info "placeholder), which broke every push UVA tried to send back"
-    kubectl -n dsp-connector set env deployment/dsp-connector-vu \
-        CONNECTOR_BASE_URL="http://dsp-connector-vu.dsp-connector.svc.cluster.local:8080" >/dev/null
-    log_info "DID_WEB_SCHEME=http: prod defaults to https, but fixture-did serves"
-    log_info "plain HTTP - DAT verification silently fails without this"
-    kubectl -n dsp-connector set env deployment/dsp-connector-vu DID_WEB_SCHEME=http >/dev/null
-    kubectl -n dsp-connector set env deployment/dsp-connector-uva DID_WEB_SCHEME=http >/dev/null
-
-    echo
-    log_ok "Setup complete - run '$0' (no args) to start the demo"
 }
 
 get_dat() {
@@ -971,8 +744,4 @@ main() {
     done
 }
 
-if [[ "${1:-}" == "--setup" ]]; then
-    setup_cluster
-else
-    main
-fi
+main

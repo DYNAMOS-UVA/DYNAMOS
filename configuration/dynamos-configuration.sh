@@ -60,12 +60,22 @@ example_definitions_file="${k8s_service_files}/definitions_example.json"
 # Kubernetes cluster
 # ---------------------------------------------------------------------------
 echo "Checking Kubernetes cluster..."
-if ! kubectl cluster-info &>/dev/null; then
-    echo "  No reachable cluster found. Creating kind cluster 'dynamos'..."
+if ! kubectl config get-contexts kind-dynamos &>/dev/null; then
+    echo "  No 'kind-dynamos' context found. Creating kind cluster 'dynamos'..."
     kind create cluster --name dynamos --wait 60s
 else
     echo "  Cluster reachable."
 fi
+# Every kubectl/helm call below this point relies on kubectl's own current
+# context rather than passing --context explicitly - live-found, issue #94:
+# with a second kind cluster (kind-mvd) also registered and left as
+# "current" by an unrelated session, the OLD check here
+# ("kubectl cluster-info", which only asks "is *some* cluster reachable",
+# not "is *this* cluster reachable") silently passed against kind-mvd, and
+# every helm/kubectl call that followed deployed DYNAMOS's entire stack
+# into the wrong cluster. Pinning the context explicitly here, once, is
+# what the rest of this script's own implicit-context calls actually need.
+kubectl config use-context kind-dynamos >/dev/null
 
 # ---------------------------------------------------------------------------
 # RabbitMQ password
@@ -111,7 +121,16 @@ echo "Installing NGINX..."
 # Drop the controller Deployment first so a stale kubectl-patch field owner
 # doesn't conflict with helm's server-side apply.
 kubectl delete deployment nginx-nginx-ingress-controller -n ingress --ignore-not-found
-helm upgrade -i -f "${core_chart}/ingress-values.yaml" nginx oci://ghcr.io/nginxinc/charts/nginx-ingress -n ingress --version 0.18.0
+# This chart's own packaged values.schema.json pulls in an external $ref
+# (raw.githubusercontent.com/nginxinc/kubernetes-json-schema) on every
+# single helm install/upgrade - genuinely flaky, real (sustained, not just
+# a blip - 5 retries 10s apart all hit it) GitHub rate-limiting (429) under
+# repeated invocation across a long session. --skip-schema-validation is a
+# real helm flag (v3.15+): our own values.yaml already matches this
+# chart's real schema, this only skips re-fetching a remote copy of it to
+# check that again. Live-found running setup-demos.sh for real, issue
+# #94/#93 shared setup.
+helm upgrade -i -f "${core_chart}/ingress-values.yaml" nginx oci://ghcr.io/nginxinc/charts/nginx-ingress -n ingress --version 0.18.0 --skip-schema-validation
 
 echo "Re-enabling NGINX snippets..."
 if ! kubectl get deployment nginx-nginx-ingress-controller -n ingress \
@@ -150,6 +169,15 @@ if command -v linkerd-jaeger &>/dev/null; then
     linkerd jaeger install | kubectl apply -f -
 else
     echo "  linkerd-jaeger CLI extension not found on PATH - skipping (deprecated upstream, optional tracing infra)."
+    # charts/core's own jaeger-nodeport.yaml (Service + ServerAuthorization)
+    # targets this namespace unconditionally, regardless of whether the
+    # actual Jaeger collector is installed - on a cluster that's never been
+    # truly recreated from scratch, this namespace already existed from
+    # whenever `linkerd jaeger install` last ran for real, silently masking
+    # that the namespaces chart itself never creates it. Live-found on a
+    # genuine from-scratch `kind create cluster`, issue #94: "core" install
+    # failed outright with "namespaces \"linkerd-jaeger\" not found".
+    kubectl create namespace linkerd-jaeger --dry-run=client -o yaml | kubectl apply -f - >/dev/null
 fi
 
 echo "Installing DYNAMOS core..."

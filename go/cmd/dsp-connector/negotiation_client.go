@@ -137,6 +137,29 @@ func fetchNegotiation(providerPid string) (*negotiationRecord, error) {
 	return &n, nil
 }
 
+// fetchNegotiationByAgreementID resolves a real Agreement's own "@id" to its
+// owning negotiation, via negotiation-service's by-agreement index. Mirrors
+// fetchNegotiation's own shape exactly - see validateAgreementId in
+// transfer_handler.go for why this is only ever tried as a fallback.
+func fetchNegotiationByAgreementID(agreementID string) (*negotiationRecord, error) {
+	reqURL := negotiationServiceURL + "/internal/v1/negotiations/by-agreement/" + url.PathEscape(agreementID)
+	resp, err := negotiationServiceClient.Get(reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("calling negotiation-service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, negotiationErrorFromResponse(resp)
+	}
+
+	var n negotiationRecord
+	if err := json.NewDecoder(resp.Body).Decode(&n); err != nil {
+		return nil, fmt.Errorf("decoding negotiation-service response: %w", err)
+	}
+	return &n, nil
+}
+
 // createNegotiation calls negotiation-service's
 // POST /internal/v1/negotiations - the initiating Contract Request Message
 // (no providerPid yet), backing DSP POST /negotiations/request.

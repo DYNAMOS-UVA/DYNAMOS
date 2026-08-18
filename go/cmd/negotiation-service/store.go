@@ -44,6 +44,13 @@ func negotiationKey(kind Kind, id string) string {
 	return fmt.Sprintf("/dsp/negotiations/%s", id)
 }
 
+// agreementIndexKey is a secondary index, providerPid keyed by the real
+// Agreement's own "@id" - see SaveAgreementIndex's own doc comment for why
+// this exists.
+func agreementIndexKey(agreementID string) string {
+	return fmt.Sprintf("/dsp/negotiations/by-agreement-id/%s", agreementID)
+}
+
 // clone deep-copies n, including the Offer/Agreement byte slices - the cache
 // and every Get caller must never share a mutable *Negotiation, or one
 // request's in-place state transition can corrupt another's read.
@@ -111,4 +118,40 @@ func (s *Store) Save(n *Negotiation) error {
 	s.mu.Unlock()
 
 	return nil
+}
+
+// SaveAgreementIndex records providerPid under a real Agreement's own "@id"
+// - a real external consumer's TransferRequestMessage carries the
+// Agreement's own @id as agreementId (the DSP spec's actual convention,
+// confirmed against a real external EDC consumer, issue #94), not the
+// providerPid dsp-connector's own validateAgreementId originally assumed
+// (docs/transfer/dsp-transfer-state-machine.md's own open question).
+// Additive: the providerPid-keyed lookup this index sits alongside stays
+// untouched, so an existing caller that already knows and sends the
+// providerPid (DYNAMOS's own consumer role, the DSP TCK) keeps working
+// unchanged - see dsp-connector's validateAgreementId, which tries that
+// path first and this one only as a fallback.
+func (s *Store) SaveAgreementIndex(agreementID, providerPid string) error {
+	if agreementID == "" {
+		return nil
+	}
+	if err := etcd.PutValueToEtcd(s.etcdClient, agreementIndexKey(agreementID), providerPid); err != nil {
+		return fmt.Errorf("saving agreement index %q: %w", agreementID, err)
+	}
+	return nil
+}
+
+// GetProviderPidByAgreementID resolves a real Agreement's own "@id" to the
+// providerPid of the negotiation that produced it, via SaveAgreementIndex's
+// index. Returns ErrNegotiationNotFound (matching Get's own sentinel) if no
+// such Agreement was ever indexed.
+func (s *Store) GetProviderPidByAgreementID(agreementID string) (string, error) {
+	raw, err := etcd.GetByteValueFromEtcd(s.etcdClient, agreementIndexKey(agreementID))
+	if err != nil {
+		return "", fmt.Errorf("fetching agreement index %q: %w", agreementID, err)
+	}
+	if raw == nil {
+		return "", fmt.Errorf("%w: agreementId %q", ErrNegotiationNotFound, agreementID)
+	}
+	return string(raw), nil
 }

@@ -148,13 +148,15 @@ func mapTransferServiceError(w http.ResponseWriter, providerPid, consumerPid str
 // owned by participant, using dsp-connector's existing negotiation-service
 // client.
 //
-// This function sets a convention that
-// docs/transfer/dsp-transfer-state-machine.md left open: DYNAMOS treats
-// agreementId as the owning negotiation's own providerPid.
-// negotiation-service stores the Agreement body as an opaque blob. It does
-// not index that body by the Agreement's own @id. No other lookup path
-// exists today. Revisit this if T3.4's real TCK run supplies an
-// agreementId in a different shape.
+// docs/transfer/dsp-transfer-state-machine.md originally left open what
+// shape agreementId takes; DYNAMOS's first guess (the owning negotiation's
+// own providerPid) is what DYNAMOS's own consumer role and the DSP TCK both
+// send, and still works unchanged - tried first, below. A real external EDC
+// consumer (issue #94) settled the real answer: the DSP spec's own
+// convention is the Agreement's own "@id", confirmed live against MVD's
+// unmodified controlplane. negotiation-service now indexes that too (see
+// its SaveAgreementIndex), tried here only as a fallback so neither existing
+// caller's behavior changes.
 func validateAgreementId(participant, agreementId string) error {
 	if agreementId == "" {
 		return fmt.Errorf("%w: agreementId is required", ErrInvalidAgreement)
@@ -162,10 +164,16 @@ func validateAgreementId(participant, agreementId string) error {
 
 	n, err := fetchNegotiation(agreementId)
 	if err != nil {
-		if errors.Is(err, ErrNegotiationNotFound) {
-			return fmt.Errorf("%w: %q", ErrAgreementNotFound, agreementId)
+		if !errors.Is(err, ErrNegotiationNotFound) {
+			return err
 		}
-		return err
+		n, err = fetchNegotiationByAgreementID(agreementId)
+		if err != nil {
+			if errors.Is(err, ErrNegotiationNotFound) {
+				return fmt.Errorf("%w: %q", ErrAgreementNotFound, agreementId)
+			}
+			return err
+		}
 	}
 	if n.Participant != participant {
 		return fmt.Errorf("%w: %q", ErrAgreementNotFound, agreementId)
