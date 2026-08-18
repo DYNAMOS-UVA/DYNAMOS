@@ -29,7 +29,8 @@ docker run -it --rm \
     --name dynamos-dev \
     --network host \
     -v "${SCRIPT_DIR}:/workspace" \
-    -v "${HOME}/.kube:/root/.kube:ro" \
+    -v "${SCRIPT_DIR}/../dynamos-mvd:/dynamos-mvd" \
+    -v "${HOME}/.kube:/root/.kube" \
     -v "/var/run/docker.sock:/var/run/docker.sock" \
     -e "DYNAMOS_HOST_ROOT=${DYNAMOS_HOST_ROOT:-}" \
     -w /workspace \

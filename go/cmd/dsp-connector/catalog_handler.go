@@ -51,11 +51,22 @@ func writeCatalogError(w http.ResponseWriter, status int, code string, reason st
 func participantFromRequest(r *http.Request) (string, bool) {
 	auth := r.Header.Get("Authorization")
 	if auth == "" {
+		logger.Sugar().Infow("participantFromRequest: no Authorization header", "path", r.URL.Path)
 		return "", false
 	}
 	token := strings.TrimPrefix(auth, "Bearer ")
 	participant, err := verifyDAT(token)
 	if err != nil {
+		// Deliberately logged here, not left to callers: every caller of
+		// this function maps a false ok to the exact same generic
+		// "missing-authorization" DSP response regardless of whether the
+		// header was absent or just failed verification (by design - a
+		// caller must not be able to tell "no attempt" from "a rejected
+		// attempt" from the wire response alone). That's the right call
+		// for the DSP-facing response, but it made a genuine
+		// signature-valid-but-still-rejected token (issue #94's own real
+		// find) very hard to diagnose with zero server-side trace at all.
+		logger.Sugar().Infow("participantFromRequest: DAT verification failed", "path", r.URL.Path, "error", err)
 		return "", false
 	}
 	return participant, true
