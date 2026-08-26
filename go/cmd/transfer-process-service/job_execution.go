@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -15,12 +16,12 @@ import (
 // jobExecutionClient calls api-gateway's own public data-request entry
 // point, the same /api/v1/requestApproval endpoint sqlDataRequest
 // ultimately uses (see the T3.2 planning note in
-// docs/transfer/dsp-transfer-state-machine.md, and ADR-008).
+// docs/transfer/dsp-transfer-state-machine.md).
 // transfer-process-service uses it purely as an external HTTP caller,
 // the same role loadtest and sql-test already have. This design needs
 // no change to api-gateway, orchestrator, policy-enforcer, or agent.
 // The non-DSP job pipeline stays untouched.
-var jobExecutionClient = http.Client{Timeout: 40 * time.Second}
+var jobExecutionClient = http.Client{Timeout: 130 * time.Second}
 
 // triggerJobAndDeliver runs T3.2's job-trigger step for a REQUESTED
 // transfer. Call it in its own goroutine. A slow or blocked job then
@@ -36,6 +37,50 @@ func triggerJobAndDeliver(id string) {
 	if err != nil {
 		logger.Sugar().Errorw("job trigger: failed to load transfer", "id", id, "error", err)
 		return
+	}
+
+	// T3.4 (TCK TP-group validation): a transfer with no job spec is not
+	// a DYNAMOS-mediated request at all - for example a plain DSP
+	// TransferRequestMessage from the TCK, or any other non-DYNAMOS
+	// consumer. That is not a failure, so it must not terminate the
+	// transfer. It leaves REQUESTED for the Consumer's own DSP messages
+	// (transferStartHandler and friends) to drive forward instead. This
+	// used to fall through to requestJobExecution, whose own empty-check
+	// turned every such request into an immediate, unsolicited
+	// TERMINATED.
+	//
+	// An earlier version of this fix auto-started every job-less
+	// transfer instead of leaving it REQUESTED, specifically to satisfy
+	// the TCK's TP_01/TP_02/TP_03(driven) sub-tests, which need the
+	// Provider to autonomously move without being told. That regressed
+	// TP:03-01 and TP:03-02 - the TCK's own negative tests, which assert
+	// a transfer stays REQUESTED until a message actually arrives, and
+	// were passing before. There is no way to tell "the TCK's driven
+	// sub-tests" and "the TCK's negative sub-tests" apart from the
+	// request alone - both look identical (same format, no dataAddress)
+	// - so a single provider policy cannot satisfy both at once. Staying
+	// passive preserves the negative tests, which verify real protocol
+	// safety (rejecting invalid transitions), over the driven tests,
+	// which only verify that this specific implementation has autonomous
+	// business logic to fabricate - DYNAMOS deliberately does not have
+	// that for a job-less transfer.
+	//
+	// defaultJobType/defaultJobRequest (issue #94) are the one, deliberate,
+	// opt-in exception: a genuine external DSP consumer has no way to know
+	// DYNAMOS's own job-spec shape, so it can never send a real dataAddress
+	// - the same job-less shape the TCK's negative tests above exercise.
+	// Both configs are empty unless a specific party deployment sets them
+	// (env, not code), so every existing caller - the TCK, DYNAMOS's own
+	// consumer role, any party that hasn't opted in - degrades to exactly
+	// the passive behavior above, byte-for-byte. Set, they supply the one
+	// canned query this demo's dataset actually answers, in place of a
+	// dataAddress no real external consumer could ever have supplied.
+	if len(t.DataAddress) == 0 {
+		if defaultJobType == "" || len(defaultJobRequest) == 0 {
+			return
+		}
+		t.Format = "dynamos:" + defaultJobType
+		t.DataAddress = defaultJobRequest
 	}
 
 	result, err := requestJobExecution(t)
@@ -120,6 +165,38 @@ func requestJobExecution(t *TransferProcess) (json.RawMessage, error) {
 	return json.RawMessage(respBody), nil
 }
 
+// wireDataAddress builds the DataAddress that actually goes out on the DSP
+// wire for t's TransferStartMessage. DYNAMOS's own convention - the raw job
+// result, inline - only ever worked DYNAMOS-to-DYNAMOS: a real external
+// EDC consumer's strict TransferStartMessage validation requires a genuine
+// DataAddress/EDR (an endpoint to pull from, not the data itself), and
+// rejects the inline shape outright (confirmed live against MVD, issue
+// #94). When connectorBaseURL is configured, this builds that real EDR,
+// pointing at dsp-connector's own GET /transfers/{providerPid}/result -
+// DAT-verified and ownership-checked exactly like every other Provider-role
+// route (transfer_result_handler.go), so no bespoke pull-token scheme was
+// invented for this: the same real DCP identity that negotiated and
+// requested the transfer is what dsp-connector expects to see pull it.
+// connectorBaseURL empty (the default) falls back to t.DataAddress itself,
+// unchanged - DYNAMOS-to-DYNAMOS demo #1 keeps working exactly as before.
+func wireDataAddress(t *TransferProcess) json.RawMessage {
+	if connectorBaseURL == "" {
+		return t.DataAddress
+	}
+
+	edr := map[string]any{
+		"@type":        "DataAddress",
+		"endpointType": "https://w3id.org/idsa/v4.1/HTTP",
+		"endpoint":     connectorBaseURL + "/transfers/" + url.PathEscape(t.ProviderPid) + "/result",
+	}
+	edrBytes, err := json.Marshal(edr)
+	if err != nil {
+		logger.Sugar().Errorw("job completion: failed to build EDR, falling back to inline result", "providerPid", t.ProviderPid, "error", err)
+		return t.DataAddress
+	}
+	return edrBytes
+}
+
 // markStartedThenCompleted moves a transfer from REQUESTED all the way
 // to COMPLETED, once the job pipeline call has already returned a
 // result. It moves through STARTED first: transition never allows
@@ -147,6 +224,11 @@ func markStartedThenCompleted(id string, result json.RawMessage) {
 		logger.Sugar().Warnw("job completion: transfer left REQUESTED before the job pipeline replied, dropping result", "id", id, "state", t.State)
 		return
 	}
+	// t.DataAddress keeps the raw result regardless of connectorBaseURL -
+	// dsp-connector's GET /transfers/{providerPid}/result (issue #94) reads
+	// it straight from here via the same internal API this store already
+	// serves. wireDataAddress is what actually goes out on the wire, which
+	// diverges from it only when a real pull endpoint is configured.
 	t.DataAddress = result
 	if err := store.Save(t); err != nil {
 		logger.Sugar().Errorw("job completion: failed to save STARTED transfer", "id", id, "error", err)
@@ -157,7 +239,7 @@ func markStartedThenCompleted(id string, result json.RawMessage) {
 		"@type":       "TransferStartMessage",
 		"providerPid": t.ProviderPid,
 		"consumerPid": t.ConsumerPid,
-		"dataAddress": t.DataAddress,
+		"dataAddress": wireDataAddress(t),
 	})
 
 	if err := t.transition(StateCompleted, StateStarted); err != nil {

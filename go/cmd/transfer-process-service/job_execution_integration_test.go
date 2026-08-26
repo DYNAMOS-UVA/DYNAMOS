@@ -157,6 +157,30 @@ func TestTriggerJobAndDeliver_LostRaceToConsumerTermination(t *testing.T) {
 	assert.Equal(t, StateTerminated, final.State, "the Consumer's termination must survive a late job result")
 }
 
+// TestTriggerJobAndDeliver_NoJobSpec_LeavesRequested covers T3.4's TCK
+// finding: a transfer with no dataAddress (a plain DSP transfer request,
+// not a DYNAMOS job) must stay REQUESTED and get no delivery at all - not
+// an unsolicited termination, and not an autonomous Start either (that
+// was tried and it broke the TCK's own negative tests, which assert a
+// transfer stays REQUESTED until a real message arrives - see
+// triggerJobAndDeliver's own doc comment). api-gateway is deliberately
+// left unconfigured; a job pipeline call here would fail the test with a
+// connection error.
+func TestTriggerJobAndDeliver_NoJobSpec_LeavesRequested(t *testing.T) {
+	store = newIntegrationStore(t)
+	consumer := startFixtureConsumerCallback(t)
+
+	tp := newTransferProcess("VU", "urn:example:consumer:nojobspec", "consumer@example.com", "urn:example:agreement:1", "example:HTTP_PULL", consumer.url, nil)
+	require.NoError(t, store.Save(tp))
+
+	triggerJobAndDeliver(tp.ProviderPid)
+
+	final, err := store.Get(tp.ProviderPid)
+	require.NoError(t, err)
+	assert.Equal(t, StateRequested, final.State)
+	assert.Empty(t, consumer.all())
+}
+
 func mustMarshal(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)

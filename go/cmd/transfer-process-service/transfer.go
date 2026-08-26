@@ -30,6 +30,18 @@ var (
 	ErrInvalidTransition = errors.New("state does not allow this transition")
 )
 
+// Kind marks which side of the transfer DYNAMOS itself plays. The two
+// roles are not exclusive - one transfer-process-service instance can
+// hold both a Provider-role and a Consumer-role transfer at once, so
+// every TransferProcess must say which one it is. Mirrors
+// negotiation-service's own Kind (#80).
+type Kind string
+
+const (
+	KindProvider Kind = "Provider"
+	KindConsumer Kind = "Consumer"
+)
+
 // TransferProcess is transfer-process-service's own etcd schema. It uses
 // its own key namespace (/dsp/transfers/{id}), separate from non-DSP keys.
 // DataAddress stays opaque: raw transport-specific JSON, as carried by the
@@ -37,6 +49,11 @@ var (
 // does not read the transport details. The data plane handles that job.
 // The DSP Transfer Process Protocol does not cover the data plane either.
 type TransferProcess struct {
+	// Kind defaults to KindProvider (the zero value is "") only through
+	// newTransferProcess explicitly setting it - never leave this unset
+	// on a hand-built TransferProcess, Store keys on it for the
+	// Consumer-role namespace (see GetConsumer/SaveConsumer in store.go).
+	Kind        Kind   `json:"kind"`
 	ProviderPid string `json:"providerPid"`
 	ConsumerPid string `json:"consumerPid"`
 	Party       string `json:"party"`
@@ -48,7 +65,18 @@ type TransferProcess struct {
 	// transfer. This follows the same convention as negotiation-service's
 	// Negotiation.Participant field.
 	Participant string `json:"participant"`
-	State       State  `json:"state"`
+	// RemoteParticipant is only set on a Consumer-role transfer: the
+	// identity of the remote Provider DYNAMOS expects to hear the push
+	// from, declared once at creation - dsp-connector compares every
+	// inbound Consumer callback's DAT-verified caller against this value
+	// (mirrors the Provider-role ownership check, which uses Participant
+	// the same way). Mirrors negotiation-service's Negotiation.RemoteParticipant.
+	RemoteParticipant string `json:"remoteParticipant,omitempty"`
+	// ProviderEndpoint is only set on a Consumer-role transfer: the
+	// remote Provider's DSP base URL, captured once at creation. Mirrors
+	// negotiation-service's Negotiation.ProviderEndpoint.
+	ProviderEndpoint string `json:"providerEndpoint,omitempty"`
+	State            State  `json:"state"`
 	// AgreementId names the Agreement this transfer runs under. It stays
 	// opaque: transfer-process-service does not check it against a
 	// FINALIZED negotiation. Which service owns that check is still an
@@ -76,6 +104,7 @@ type TransferProcess struct {
 func newTransferProcess(party, consumerPid, participant, agreementId, format, callbackAddress string, dataAddress json.RawMessage) *TransferProcess {
 	now := time.Now().UTC()
 	return &TransferProcess{
+		Kind:            KindProvider,
 		ProviderPid:     fmt.Sprintf("urn:dynamos:transfer:%s:%s", party, uuid.New().String()),
 		ConsumerPid:     consumerPid,
 		Party:           party,
@@ -87,6 +116,31 @@ func newTransferProcess(party, consumerPid, participant, agreementId, format, ca
 		CallbackAddress: callbackAddress,
 		CreatedAt:       now,
 		UpdatedAt:       now,
+	}
+}
+
+// newConsumerTransferProcess builds a fresh Consumer-role transfer in
+// REQUESTED, the moment DYNAMOS itself sends the initiating Transfer
+// Request Message. DYNAMOS is Consumer here, so it owns and generates the
+// ConsumerPid; ProviderPid is unknown until the remote Provider's 201
+// response comes back (see transfersConsumerCollectionHandler). Mirrors
+// negotiation-service's newConsumerNegotiation.
+func newConsumerTransferProcess(party, participant, remoteParticipant, providerEndpoint, agreementId, format, callbackAddress string, dataAddress json.RawMessage) *TransferProcess {
+	now := time.Now().UTC()
+	return &TransferProcess{
+		Kind:              KindConsumer,
+		ConsumerPid:       fmt.Sprintf("urn:dynamos:transfer:consumer:%s:%s", party, uuid.New().String()),
+		Party:             party,
+		Participant:       participant,
+		RemoteParticipant: remoteParticipant,
+		ProviderEndpoint:  providerEndpoint,
+		State:             StateRequested,
+		AgreementId:       agreementId,
+		Format:            format,
+		DataAddress:       dataAddress,
+		CallbackAddress:   callbackAddress,
+		CreatedAt:         now,
+		UpdatedAt:         now,
 	}
 }
 

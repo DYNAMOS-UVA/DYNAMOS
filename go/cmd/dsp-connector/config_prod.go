@@ -19,9 +19,11 @@ var catalogServiceURL = "http://catalog-service.catalog-service.svc.cluster.loca
 // catalog-service's own placeholder used, until T2.6 confirms the real DNS.
 var negotiationServiceURL = "http://negotiation-service.negotiation-service.svc.cluster.local:8080"
 
-// Placeholder - transfer-process-service has no Helm chart/Service yet
-// (T3.3, not started). Assumes the same namespace-per-service convention
-// the other two placeholders use, until T3.3 confirms the real DNS.
+// Fallback only. The real, per-party address comes from the
+// TRANSFER_SERVICE_URL env var, set by charts/transfer-process-service's
+// own Helm chart (T3.3). This value is never reachable on its own: no
+// Service exists under this exact name, only the party-suffixed ones
+// (transfer-process-service-vu, and so on).
 var transferServiceURL = "http://transfer-process-service.transfer-process-service.svc.cluster.local:8080"
 
 // apiVersion is the base path DYNAMOS publishes for this service's DSP
@@ -34,3 +36,15 @@ var apiVersion = "/api/v1"
 // didWebScheme: real did:web resolution (dat_verification.go) always uses
 // https in prod, per spec. Only local/TCK builds relax this (config_local.go).
 var didWebScheme = "https"
+
+// party: overridden from the DATA_STEWARD_NAME env var in main.go - the
+// same Helm-provisioned variable negotiation-service's own `party` config
+// already reads (charts/dsp-connector's per-party templates set it, unused
+// by this service until #83's Consumer-role initiate handler needed its own
+// identity).
+var party = ""
+
+// connectorBaseURL: placeholder only, same caveat as catalogServiceURL/
+// negotiationServiceURL above - no real per-party ingress hostname exists
+// yet for dsp-connector to advertise as its own callbackAddress base.
+var connectorBaseURL = ""

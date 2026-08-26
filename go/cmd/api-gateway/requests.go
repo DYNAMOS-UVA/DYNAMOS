@@ -8,11 +8,13 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
+	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.opencensus.io/trace/propagation"
 	"go.opencensus.io/trace"
@@ -39,8 +41,18 @@ func requestHandler() http.HandlerFunc {
 			return
 		}
 
+		// requestApprovalMap is keyed on User.Id, so it must be unique per
+		// in-flight HTTP request, not just per caller. A caller-supplied Id
+		// (or the common case of no Id at all) collides across concurrent
+		// requests: the second request's map entry silently overwrites the
+		// first's response channel, so the first request's response is never
+		// delivered and it hangs until its own context deadline. Generating
+		// the correlation Id here, instead of trusting caller input, is safe
+		// because nothing downstream (orchestrator, policy-enforcer) reads
+		// User.Id for anything other than echoing it back on this same
+		// round trip.
 		userPb := &pb.User{
-			Id:       apiReqApproval.User.Id,
+			Id:       uuid.New().String(),
 			UserName: apiReqApproval.User.UserName,
 		}
 
@@ -91,6 +103,16 @@ func requestHandler() http.HandlerFunc {
 				return
 			}
 
+			// orchestrator sets Error (and leaves AuthorizedProviders empty) when
+			// the request was denied - no agreement, no authorized providers, etc.
+			// Callers (e.g. transfer-process-service) only distinguish success from
+			// failure by HTTP status, so this must not fall through to a 200.
+			if msg.Error != "" {
+				logger.Sugar().Warnf("Request approval denied: %s", msg.Error)
+				http.Error(w, msg.Error, http.StatusForbidden)
+				return
+			}
+
 			// Add necessary information for the data request in the request metadata
 			requestMetadata := &pb.RequestMetadata{
 				// Add the job id from the request approval to the data request body
@@ -113,12 +135,25 @@ func requestHandler() http.HandlerFunc {
 			logger.Sugar().Infof("Data Prepared jsonData: %s", dataRequestJson)
 
 			// Send the data to the authorized providers
-			responses := sendDataToAuthProviders(dataRequestJson, msg.AuthorizedProviders, apiReqApproval.Type, msg.JobId)
+			responses, allSucceeded := sendDataToAuthProviders(dataRequestJson, msg.AuthorizedProviders, apiReqApproval.Type, msg.JobId)
+			if !allSucceeded {
+				// At least one authorized provider failed to handle the data
+				// request. Callers (e.g. transfer-process-service) only check
+				// the HTTP status to decide success vs failure - a 200 here
+				// would tell them the job succeeded when it didn't.
+				logger.Sugar().Error("At least one authorized provider failed to handle the data request")
+				w.WriteHeader(http.StatusBadGateway)
+				w.Write(responses)
+				return
+			}
 			w.WriteHeader(http.StatusOK)
 			w.Write(responses)
 			return
 
 		case <-ctx.Done():
+			requestApprovalMutex.Lock()
+			delete(requestApprovalMap, protoRequest.User.Id)
+			requestApprovalMutex.Unlock()
 			http.Error(w, "Request timed out", http.StatusRequestTimeout)
 			return
 		}
@@ -127,10 +162,17 @@ func requestHandler() http.HandlerFunc {
 
 // Use the data request that was previously built and send it to the authorised providers
 // acquired from the request approval
-func sendDataToAuthProviders(dataRequest []byte, authorizedProviders map[string]string, msgType string, jobId string) []byte {
+// The bool return reports whether every authorized provider's data request
+// succeeded. A single failed provider still marshals a response body (so
+// callers can see which one and what the other providers returned), but
+// callers must check this before treating the request as a success.
+func sendDataToAuthProviders(dataRequest []byte, authorizedProviders map[string]string, msgType string, jobId string) ([]byte, bool) {
 	// Setup the wait group for async data requests
 	var wg sync.WaitGroup
+	var mu sync.Mutex
 	var responses []string
+	var allSucceeded atomic.Bool
+	allSucceeded.Store(true)
 
 	// This will be replaced with AMQ in the future
 	agentPort := "8080"
@@ -149,8 +191,11 @@ func sendDataToAuthProviders(dataRequest []byte, authorizedProviders map[string]
 			respData, err := sendData(endpoint, dataRequest)
 			if err != nil {
 				logger.Sugar().Errorf("Error sending data, %v", err)
+				allSucceeded.Store(false)
 			}
+			mu.Lock()
 			responses = append(responses, respData)
+			mu.Unlock()
 			// Signal that the data request has been sent to all auth providers
 			wg.Done()
 		}()
@@ -167,7 +212,7 @@ func sendDataToAuthProviders(dataRequest []byte, authorizedProviders map[string]
 
 	// jsonResponse, _ := json.Marshal(responseMap)
 	// return jsonResponse
-	return cleanupAndMarshalResponse(responseMap)
+	return cleanupAndMarshalResponse(responseMap), allSucceeded.Load()
 }
 
 // Now assumes input is map[string]interface{} and directly marshals it to prettified JSON.

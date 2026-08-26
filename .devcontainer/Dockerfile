@@ -43,6 +43,25 @@ RUN KUBECTL_VERSION=$(curl -sSL https://dl.k8s.io/release/stable.txt) && \
         -o /usr/local/bin/kubectl && \
     chmod +x /usr/local/bin/kubectl
 
+# ── JDK 17 (MVD's own gradlew dockerize build - issue #94) ────────────────────
+# openjdk-21 isn't used here even if present on the host: this repo's own
+# wiki notes confirm 17+ works and 17 is what was actually used/verified
+# against dynamos-mvd's own 0.17.0 build. Named explicitly (not "default-
+# jdk") so JAVA_HOME below is a stable path across Debian point releases.
+RUN apt-get update && apt-get install -y --no-install-recommends openjdk-17-jdk \
+    && rm -rf /var/lib/apt/lists/*
+ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
+ENV PATH="${JAVA_HOME}/bin:${PATH}"
+
+# ── kind ──────────────────────────────────────────────────────────────────────
+# dynamos-configuration.sh's own self-heal path (`kind create cluster` when
+# kind-dynamos is missing) needs this - live-found never actually
+# installed here, only ever run from the host shell before, issue #94.
+RUN KIND_VERSION=v0.23.0 && \
+    curl -sSL "https://kind.sigs.k8s.io/dl/${KIND_VERSION}/kind-linux-amd64" \
+        -o /usr/local/bin/kind && \
+    chmod +x /usr/local/bin/kind
+
 # ── Helm v4 ───────────────────────────────────────────────────────────────────
 RUN curl -fsSL https://packages.buildkite.com/helm-linux/helm-debian/gpgkey \
         | gpg --dearmor | tee /usr/share/keyrings/helm.gpg > /dev/null && \

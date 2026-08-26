@@ -18,7 +18,7 @@ spec:
       containers:
       - name: dsp-connector-uva
         image: {{ .Values.dockerArtifactAccount }}/dsp-connector:{{ .Values.branchNameTag }}
-        imagePullPolicy: IfNotPresent
+        imagePullPolicy: Always
         ports:
         - containerPort: 8080
         env:
@@ -28,6 +28,8 @@ spec:
           value: {{ .Values.catalogServiceURL.uva | quote }}
         - name: NEGOTIATION_SERVICE_URL
           value: {{ .Values.negotiationServiceURL.uva | quote }}
+        - name: TRANSFER_SERVICE_URL
+          value: {{ .Values.transferServiceURL.uva | quote }}
         {{- if .Values.didWebScheme }}
         - name: DID_WEB_SCHEME
           value: {{ .Values.didWebScheme | quote }}

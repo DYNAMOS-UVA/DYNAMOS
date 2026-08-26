@@ -70,6 +70,28 @@ func TestNegotiation_Clone(t *testing.T) {
 	assert.Equal(t, StateRequested, n.State)
 }
 
+func TestNewNegotiation_KindProvider(t *testing.T) {
+	n := newNegotiation("VU", "urn:example:consumer:1", "consumer@example.com", "https://consumer.example.com/callback", []byte(`{}`))
+
+	assert.Equal(t, KindProvider, n.Kind)
+	assert.Equal(t, n.ProviderPid, n.OwnPid())
+}
+
+func TestNewConsumerNegotiation(t *testing.T) {
+	n := newConsumerNegotiation("VU", "did:web:vu.example.com", "did:web:surf.example.com", "https://surf.example.com/dsp", "https://vu.example.com/callback", []byte(`{"@id":"offer-1"}`))
+
+	assert.Equal(t, KindConsumer, n.Kind)
+	assert.Equal(t, "VU", n.Party)
+	assert.Equal(t, "did:web:vu.example.com", n.Participant)
+	assert.Equal(t, "did:web:surf.example.com", n.RemoteParticipant)
+	assert.Equal(t, "https://surf.example.com/dsp", n.ProviderEndpoint)
+	assert.Equal(t, "https://vu.example.com/callback", n.CallbackAddress)
+	assert.Equal(t, StateRequested, n.State)
+	assert.Contains(t, n.ConsumerPid, "urn:dynamos:negotiation:consumer:VU:")
+	assert.Empty(t, n.ProviderPid, "ProviderPid is unknown until the remote Provider's 201 response arrives")
+	assert.Equal(t, n.ConsumerPid, n.OwnPid())
+}
+
 func TestTransition_OfferedRequestedLoop(t *testing.T) {
 	// Both REQUESTED and OFFERED can be reached repeatedly before AGREED -
 	// counter-request/counter-offer, per the state machine doc.

@@ -54,6 +54,36 @@ func TestGenerateGuid(t *testing.T) {
 	}
 }
 
+func TestGenerateJobName(t *testing.T) {
+	tests := []struct {
+		name     string
+		identity string
+		length   int
+		prefix   string
+	}{
+		{"email identity", "example.two@cloud.com", 8, "example-two-"},
+		{"DID identity", "did:web:example.com", 8, "did-web-example-com-"},
+		{"DID identity with port", "did:web:localhost%3A9999", 8, "did-web-localhost-3a9999-"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := GenerateJobName(tt.identity, tt.length)
+
+			if result == "" {
+				t.Fatalf("expected a non-empty job name for identity %q", tt.identity)
+			}
+			if !strings.HasPrefix(result, tt.prefix) {
+				t.Errorf("expected job name to start with %q, got %q", tt.prefix, result)
+			}
+			guidPart := strings.TrimPrefix(result, tt.prefix)
+			if len(guidPart) != tt.length {
+				t.Errorf("expected GUID part of length %d, got %q (length %d)", tt.length, guidPart, len(guidPart))
+			}
+		})
+	}
+}
+
 func TestLastPartAfterSlash(t *testing.T) {
 	tests := []struct {
 		input    string

@@ -25,14 +25,37 @@ var (
 var ErrTransferForbidden = errors.New("transfer-process-service: participant does not own this transfer")
 
 // transferRecord is the subset of transfer-process-service's TransferProcess
-// JSON this connector needs to build a DSP TransferProcess ack. DataAddress
-// and timestamps stay internal to transfer-process-service.
+// JSON this connector needs. Timestamps stay internal to
+// transfer-process-service. RemoteParticipant and DataAddress are only ever
+// populated on a Consumer-role record (issue #93) - a Provider-role record
+// leaves both zero, and writeTransferAck never emits either, so decoding
+// them here changes nothing about the existing Provider-role DSP ack.
+// DataAddress exists so transferConsumerGetHandler can expose the real
+// pushed data (see writeTransferConsumerStatus in
+// transfer_consumer_handler.go) - the DSP TransferProcess ack itself never
+// carries dataAddress, by spec, so this never reaches writeTransferAck's
+// strict shape.
 type transferRecord struct {
-	ProviderPid string `json:"providerPid"`
-	ConsumerPid string `json:"consumerPid"`
-	Participant string `json:"participant"`
-	AgreementId string `json:"agreementId"`
-	State       string `json:"state"`
+	ProviderPid       string          `json:"providerPid"`
+	ConsumerPid       string          `json:"consumerPid"`
+	Participant       string          `json:"participant"`
+	RemoteParticipant string          `json:"remoteParticipant,omitempty"`
+	AgreementId       string          `json:"agreementId"`
+	State             string          `json:"state"`
+	DataAddress       json.RawMessage `json:"dataAddress,omitempty"`
+}
+
+// checkConsumerTransferOwnership reports ErrTransferForbidden if
+// participant isn't the remote Provider DYNAMOS declared when it initiated
+// this transfer (issue #93's create-as-consumer). The Consumer-role
+// counterpart to checkTransferOwnership - compared against
+// RemoteParticipant instead of Participant, same reasoning
+// checkConsumerNegotiationOwnership documents.
+func checkConsumerTransferOwnership(t *transferRecord, participant string) error {
+	if t.RemoteParticipant != participant {
+		return ErrTransferForbidden
+	}
+	return nil
 }
 
 // checkTransferOwnership reports ErrTransferForbidden if participant did
@@ -147,10 +170,9 @@ func createTransfer(consumerPid, participant, agreementId, format, callbackAddre
 
 // startTransfer calls transfer-process-service's
 // POST /internal/v1/transfers/{id}/start, backing DSP
-// POST /transfers/:providerPid/start. dsp-connector only ever calls this
-// for the Consumer resume-after-suspend case - see transferStartHandler's
-// own doc comment for the Provider-initiated-Start vs Consumer-resume-Start
-// asymmetry this reflects.
+// POST /transfers/:providerPid/start - every inbound, Consumer-initiated
+// Start message, whether it starts a transfer from REQUESTED or resumes
+// one from SUSPENDED. See transferStartHandler's own doc comment.
 func startTransfer(providerPid string, dataAddress json.RawMessage) (*transferRecord, error) {
 	body := map[string]any{}
 	// Same reasoning as createTransfer: omit the key rather than send a

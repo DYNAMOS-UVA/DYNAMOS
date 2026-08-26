@@ -3,7 +3,11 @@
 
 package main
 
-import "go.uber.org/zap"
+import (
+	"encoding/json"
+
+	"go.uber.org/zap"
+)
 
 var serviceName = "transfer-process-service"
 var logLevel = zap.DebugLevel
@@ -22,3 +26,16 @@ var etcdEndpoints = "http://localhost:2379"
 // port-forward, with a Host header for name-based routing.
 var apiGatewayURL = "http://localhost:80"
 var apiGatewayHost = "api-gateway.api-gateway.svc.cluster.local"
+
+// partyDAT is this service's own outbound identity assertion - see its
+// doc comment in config_prod.go. Empty by default in local dev.
+var partyDAT = ""
+
+// See config_prod.go's doc comments - empty by default, same degradation.
+var stsTokenURL = ""
+var stsClientID = ""
+var stsClientSecret = ""
+var stsScope = "org.eclipse.dspace.dcp.vc.type:MembershipCredential:read"
+var defaultJobType = ""
+var defaultJobRequest json.RawMessage = nil
+var connectorBaseURL = ""

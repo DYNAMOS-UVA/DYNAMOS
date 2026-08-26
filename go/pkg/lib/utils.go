@@ -27,22 +27,33 @@ func (s Set) Has(v string) bool {
 	return ok
 }
 
-// Function expects a valid email address and the length of the desired GUID
-// Example:
+// Function expects an identity (an email address or a DID) and the length of
+// the desired GUID.
+// Examples:
 //
 // fmt.Println(GenerateJobName("example.two@cloud.com", 8))
 // prints: example-two-12345678 (some GUID of length 8, prefixed with a hyphen)
-func GenerateJobName(email string, length int) string {
-	// Extract the part before '@' symbol
-	atIndex := strings.Index(email, "@")
-	if atIndex == -1 {
-		return ""
+//
+// fmt.Println(GenerateJobName("did:web:example.com", 8))
+// prints: did-web-example-com-12345678
+func GenerateJobName(identity string, length int) string {
+	// Email-shaped identities only use the part before '@'. DID identities
+	// (and any other identity with no '@') have no such split point, so the
+	// whole identity is used instead - returning "" here left every
+	// DID-based DSP request with an empty JobName downstream.
+	namePart := identity
+	if atIndex := strings.Index(identity, "@"); atIndex != -1 {
+		namePart = identity[:atIndex]
 	}
-	domain := email[:atIndex]
 
-	// Remove special characters and replace with hyphen
+	// Remove special characters and replace with hyphen, then lowercase -
+	// Kubernetes Job names must be a lowercase RFC 1123 subdomain. A
+	// did:web identity's percent-encoded port (e.g. "%3A7083") sanitizes
+	// down to a literal uppercase "3A", which every k8s Job creation using
+	// this name then rejects outright - live-found against a real external
+	// DID identity, issue #94.
 	re := regexp.MustCompile(`[^a-zA-Z0-9]+`)
-	domain = re.ReplaceAllString(domain, "-")
+	namePart = strings.ToLower(re.ReplaceAllString(namePart, "-"))
 
 	// Generate a random GUID of the given length
 	guid := uuid.New().String()
@@ -50,8 +61,7 @@ func GenerateJobName(email string, length int) string {
 		guid = guid[:length]
 	}
 
-	// Construct the final email address
-	return fmt.Sprintf("%s-%s", domain, guid)
+	return fmt.Sprintf("%s-%s", namePart, guid)
 }
 
 func ReadFile(fileName string) (string, error) {

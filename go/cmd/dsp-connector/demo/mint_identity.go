@@ -30,6 +30,13 @@ import (
 )
 
 const (
+	// No port suffix - fixture-did's own Service (ensure_fixture_did in
+	// dsp-transfer-demo.sh) only ever exposes port 80, matching that
+	// script's own port-less $DID var. The previous "%3A31464" here was
+	// stale copy-paste drift from an unrelated NodePort (issue #94's own
+	// dsp-vu Service, a different fixture entirely) - live-found: DID
+	// resolution against :31464 gets "connection reset by peer", nothing
+	// ever listens there for fixture-did.
 	fixtureDID = "did:web:fixture-did.dsp-connector.svc.cluster.local"
 	party      = "VU"
 	datasetID  = "wageGap"
@@ -69,6 +76,7 @@ func main() {
 	dat := jwt.NewWithClaims(jwt.SigningMethodES256, jwt.MapClaims{
 		"iss": fixtureDID,
 	})
+	dat.Header["kid"] = fixtureDID + "#key-1"
 	datSigned, err := dat.SignedString(priv)
 	if err != nil {
 		panic(err)

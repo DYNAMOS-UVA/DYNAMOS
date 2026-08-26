@@ -29,7 +29,7 @@ func isJobWaiting(ctx context.Context, msComm *pb.MicroserviceCommunication, cor
 
 	if ok && waitingJob.nrOfDataStewards > 0 {
 		logger.Sugar().Infof("Nr. of stewards: %d", waitingJob.nrOfDataStewards)
-		handleFurtherProcessing(ctx, waitingJob.job.Name, msComm)
+		handleFurtherProcessing(ctx, waitingJob.queueName, msComm)
 		waitingJob.nrOfDataStewards = waitingJob.nrOfDataStewards - 1
 		if waitingJob.nrOfDataStewards == 0 {
 			waitingJobMutex.Lock()

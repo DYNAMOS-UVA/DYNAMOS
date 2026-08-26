@@ -1,0 +1,183 @@
+name: DSP TCK
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+
+jobs:
+  dsp-tck-validation:
+    name: DSP TCK (CAT, MET, CN, CN_C, TP:03-01/02)
+    runs-on: ubuntu-latest
+    # Skip draft PRs - only push-to-main and non-draft PRs run this. A
+    # draft turning into a real PR (ready_for_review, added to types above)
+    # still gets a run.
+    if: github.event_name == 'push' || github.event.pull_request.draft == false
+    # Backstop above both TCK-run steps' own timeouts (see below) - those
+    # should always fire first, this just bounds the whole job in case they
+    # don't.
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+
+      # Standalone etcd container, not the real kind cluster (which
+      # dev/dynamos-configuration.sh stands up) - the 3 DSP services below
+      # only ever need etcd reachable, never real k8s, so this is enough
+      # for a TCK run and avoids kind/helm/linkerd entirely in CI.
+      - name: Start etcd
+        run: |
+          docker run -d --rm --name ci-etcd -p 2379:2379 \
+            quay.io/coreos/etcd:v3.5.14 \
+            /usr/local/bin/etcd \
+            --data-dir=/etcd-data \
+            --listen-client-urls http://0.0.0.0:2379 \
+            --advertise-client-urls http://0.0.0.0:2379 \
+            --listen-peer-urls http://0.0.0.0:2380 \
+            --initial-advertise-peer-urls http://0.0.0.0:2380 \
+            --initial-cluster default=http://0.0.0.0:2380
+          for i in $(seq 1 15); do
+            curl -sf http://localhost:2379/version > /dev/null && exit 0
+            sleep 1
+          done
+          echo "etcd never became reachable" >&2
+          exit 1
+
+      # Baseline agreement/dataset + the 15 CN-group per-test datasets.
+      # Local dev gets the baseline for free from cmd/orchestrator's own
+      # etcd_config.go, loaded via the full kind cluster's
+      # dynamos-configuration.sh - ci_seed_baseline.go is the standalone-etcd
+      # substitute for just the two keys the TCK groups actually read.
+      - name: Seed etcd
+        working-directory: go
+        run: |
+          go run cmd/dsp-connector/tck/ci_seed_baseline.go
+          go run cmd/dsp-connector/tck/seed_cn_datasets.go
+          go run cmd/dsp-connector/tck/seed_tp_negotiation.go
+
+      - name: Start catalog-service, negotiation-service, transfer-process-service, dsp-connector
+        working-directory: go
+        run: |
+          DATA_STEWARD_NAME=VU nohup go run -tags local ./cmd/catalog-service > /tmp/catalog-service.log 2>&1 &
+          DATA_STEWARD_NAME=VU CONSUMER_AUTO_NEGOTIATE=false nohup go run -tags local ./cmd/negotiation-service > /tmp/negotiation-service.log 2>&1 &
+          DATA_STEWARD_NAME=VU nohup go run -tags local ./cmd/transfer-process-service > /tmp/transfer-process-service.log 2>&1 &
+          DATA_STEWARD_NAME=VU nohup go run -tags local ./cmd/dsp-connector > /tmp/dsp-connector.log 2>&1 &
+          for port in 8091 8092 8093 8090; do
+            for i in $(seq 1 30); do
+              curl -sf "http://localhost:$port/health" > /dev/null && break
+              sleep 1
+              if [ "$i" -eq 30 ]; then
+                echo "service on :$port never became healthy" >&2
+                exit 1
+              fi
+            done
+          done
+
+      # Serves fixture/.well-known/did.json so dsp-connector can resolve the
+      # TCK's own DAT-signing DID (dat_verification.go) - same as run-tck.sh
+      # does for a local run.
+      - name: Serve fixture DID document
+        working-directory: go/cmd/dsp-connector/tck
+        run: |
+          nohup python3 -m http.server 9999 --directory fixture > /tmp/fixture-did.log 2>&1 &
+          for i in $(seq 1 10); do
+            curl -sf http://localhost:9999/.well-known/did.json > /dev/null && exit 0
+            sleep 1
+          done
+          echo "fixture DID server never became reachable" >&2
+          exit 1
+
+      # Drive DYNAMOS's real reactions for both TCK roles: CN group needs
+      # tck_auto_responder.go (Provider-role, negotiation-service has zero
+      # autonomy there); CN_C group needs tck_auto_responder_consumer.go
+      # (Consumer-role, CONSUMER_AUTO_NEGOTIATE=false above turns off #82's
+      # accept-all so this can drive each test's own real reaction instead -
+      # see negotiation-service/main.go's own doc comment on that flag).
+      # Safe to run together (#83, confirmed live): disjoint dataset-id
+      # namespaces (cn01xx vs cnc01xx).
+      - name: Start TCK auto-responders
+        working-directory: go
+        run: |
+          nohup go run cmd/dsp-connector/tck/tck_auto_responder.go > /tmp/tck-auto-responder.log 2>&1 &
+          nohup go run cmd/dsp-connector/tck/tck_auto_responder_consumer.go > /tmp/tck-auto-responder-consumer.log 2>&1 &
+          sleep 3
+
+      # Two separate TCK container runs, not one combined dsp-cat,dsp-cn,dsp-tp
+      # run - confirmed live (2026-08-18) that the TCK executes dsp-tp's
+      # tests FIRST, ahead of dsp-cat/dsp-cn, regardless of the tag list's
+      # own order in tck.properties. A single combined run would hang at
+      # TP:03-03 (the first "driven" test - see below) before CAT/CN/CN_C
+      # ever started, so splitting is required, not just a runtime
+      # optimization.
+      - name: Run DSP TCK (CAT, MET, CN, CN_C)
+        working-directory: go/cmd/dsp-connector/tck
+        run: |
+          sed 's/^dataspacetck.filters.tags.include=.*/dataspacetck.filters.tags.include=dsp-cat,dsp-cn/' \
+            tck.properties > /tmp/tck.properties.cat-cn
+          timeout 5m docker run --rm --name dsp-tck-cat-cn \
+            --add-host "host.docker.internal:host-gateway" \
+            -p "8083:8083" \
+            --mount "type=bind,source=/tmp/tck.properties.cat-cn,target=/etc/tck/config.properties" \
+            eclipsedataspacetck/dsp-tck-runtime:latest \
+            | tee /tmp/tck-run.log || true
+
+      # TP alone, tag-scoped so it can never block behind (or in front of)
+      # CAT/CN/CN_C. Only TP:03-01/TP:03-02 (consumer-driven) pass against a
+      # real connector and are asserted in ci-expected-passing.txt - the
+      # other 12 ("provider-driven": TCK expects dsp-connector to
+      # autonomously push Start/Complete/Suspend/Terminate) hang
+      # indefinitely, a documented TCK harness limitation, not a
+      # dsp-connector gap (see tck.properties:122-158 for the full trace).
+      # Confirmed live: TP:03-01/TP:03-02 both complete within ~3 seconds of
+      # the run starting, well before TP:03-03 (the first hang) even
+      # starts - so this polls for TP:03-02's own SUCCESSFUL line and kills
+      # the run the moment it appears, instead of waiting out a fixed
+      # timeout. The 90s poll bound is a safety backstop only (a real
+      # regression here should fail loudly via ci-check-results.sh below,
+      # not hang the job for minutes).
+      - name: Run DSP TCK (TP:03-01/02)
+        working-directory: go/cmd/dsp-connector/tck
+        run: |
+          sed 's/^dataspacetck.filters.tags.include=.*/dataspacetck.filters.tags.include=dsp-tp/' \
+            tck.properties > /tmp/tck.properties.tp
+          docker run --rm --name dsp-tck-tp \
+            --add-host "host.docker.internal:host-gateway" \
+            -p "8083:8083" \
+            --mount "type=bind,source=/tmp/tck.properties.tp,target=/etc/tck/config.properties" \
+            eclipsedataspacetck/dsp-tck-runtime:latest \
+            | tee -a /tmp/tck-run.log &
+          TP_TCK_PID=$!
+          for i in $(seq 1 90); do
+            grep -q "SUCCESSFUL: TP:03-02" /tmp/tck-run.log 2>/dev/null && sleep 1 && break
+            kill -0 "$TP_TCK_PID" 2>/dev/null || break
+            sleep 1
+          done
+          docker kill dsp-tck-tp > /dev/null 2>&1 || true
+          wait "$TP_TCK_PID" 2>/dev/null || true
+
+      # Either run above may have been killed mid-test rather than exiting
+      # normally - `--rm` auto-removes on a killed container too, but this
+      # is a real, previously-hit failure mode (see the local runbook,
+      # caveman-howto-tck-and-mvd.md) worth guarding explicitly rather than
+      # trusting silently.
+      - name: Stop any leftover TCK containers
+        if: always()
+        run: |
+          docker kill dsp-tck-cat-cn dsp-tck-tp > /dev/null 2>&1 || true
+          docker rm -f dsp-tck-cat-cn dsp-tck-tp > /dev/null 2>&1 || true
+
+      - name: Check results against ci-expected-passing.txt
+        working-directory: go/cmd/dsp-connector/tck
+        run: ./ci-check-results.sh /tmp/tck-run.log ci-expected-passing.txt
+
+      - name: Upload TCK log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-tck-run-log
+          path: /tmp/tck-run.log

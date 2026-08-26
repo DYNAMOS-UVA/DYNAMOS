@@ -74,10 +74,13 @@ func negotiationErrorFromResponse(resp *http.Response) error {
 	return mapInternalServiceError("negotiation-service", resp, negotiationServiceErrorCodes, negotiationServiceStatusFallback)
 }
 
-// postNegotiation POSTs body (JSON-encoded, may be nil) to path on
-// negotiation-service and decodes a negotiationRecord from a 200/201
-// response, or an error from anything else.
-func postNegotiation(path string, body any) (*negotiationRecord, error) {
+// postToNegotiationService POSTs body (JSON-encoded, may be nil) to path on
+// negotiation-service and returns the raw response for the caller to decode
+// - shared by postNegotiation (Provider-role) and postConsumerNegotiation
+// (Consumer-role, negotiation_consumer_client.go, #81), which otherwise
+// duplicated this encode-then-POST verbatim, only the response shape
+// (negotiationRecord vs. consumerNegotiationRecord) differs between them.
+func postToNegotiationService(path string, body any) (*http.Response, error) {
 	var buf bytes.Buffer
 	if body != nil {
 		if err := json.NewEncoder(&buf).Encode(body); err != nil {
@@ -88,6 +91,17 @@ func postNegotiation(path string, body any) (*negotiationRecord, error) {
 	resp, err := negotiationServiceClient.Post(negotiationServiceURL+path, "application/json", &buf)
 	if err != nil {
 		return nil, fmt.Errorf("calling negotiation-service: %w", err)
+	}
+	return resp, nil
+}
+
+// postNegotiation POSTs body (JSON-encoded, may be nil) to path on
+// negotiation-service and decodes a negotiationRecord from a 200/201
+// response, or an error from anything else.
+func postNegotiation(path string, body any) (*negotiationRecord, error) {
+	resp, err := postToNegotiationService(path, body)
+	if err != nil {
+		return nil, err
 	}
 	defer resp.Body.Close()
 
@@ -106,6 +120,29 @@ func postNegotiation(path string, body any) (*negotiationRecord, error) {
 // backing the DSP GET /negotiations/:providerPid endpoint.
 func fetchNegotiation(providerPid string) (*negotiationRecord, error) {
 	reqURL := negotiationServiceURL + "/internal/v1/negotiations/" + url.PathEscape(providerPid)
+	resp, err := negotiationServiceClient.Get(reqURL)
+	if err != nil {
+		return nil, fmt.Errorf("calling negotiation-service: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, negotiationErrorFromResponse(resp)
+	}
+
+	var n negotiationRecord
+	if err := json.NewDecoder(resp.Body).Decode(&n); err != nil {
+		return nil, fmt.Errorf("decoding negotiation-service response: %w", err)
+	}
+	return &n, nil
+}
+
+// fetchNegotiationByAgreementID resolves a real Agreement's own "@id" to its
+// owning negotiation, via negotiation-service's by-agreement index. Mirrors
+// fetchNegotiation's own shape exactly - see validateAgreementId in
+// transfer_handler.go for why this is only ever tried as a fallback.
+func fetchNegotiationByAgreementID(agreementID string) (*negotiationRecord, error) {
+	reqURL := negotiationServiceURL + "/internal/v1/negotiations/by-agreement/" + url.PathEscape(agreementID)
 	resp, err := negotiationServiceClient.Get(reqURL)
 	if err != nil {
 		return nil, fmt.Errorf("calling negotiation-service: %w", err)
