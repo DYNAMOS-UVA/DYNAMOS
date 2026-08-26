@@ -1,0 +1,43 @@
+name: Publish Images
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  publish-images:
+    name: Build and push changed microservice images
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history, so build-changed-images.sh can diff against the
+          # commit before this push.
+          fetch-depth: 0
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go/go.mod
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # go/Makefile's proto target needs protoc plus the go plugins;
+      # python/Makefile's proto target needs grpcio-tools. Both Makefiles
+      # only invoke proto for the targets that actually need it.
+      - name: Install protoc and gRPC plugins
+        run: |
+          sudo apt-get update && sudo apt-get install -y protobuf-compiler
+          go install google.golang.org/protobuf/cmd/protoc-gen-go@latest
+          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          pip install grpcio-tools
+
+      - uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and push changed images
+        run: scripts/build-changed-images.sh "${{ github.event.before }}" "${{ github.sha }}"
