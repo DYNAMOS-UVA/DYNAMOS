@@ -250,7 +250,18 @@ setup_dynamos() {
     # REPO_ROOT (correct when this script runs directly on the host) if
     # DYNAMOS_HOST_ROOT isn't already set - dev.sh's own -e flag (from
     # .env) is what sets it correctly inside the devcontainer.
-    if ! ( cd "${REPO_ROOT}" && DYNAMOS_HOST_ROOT="${DYNAMOS_HOST_ROOT:-${REPO_ROOT}}" bash configuration/dynamos-configuration.sh > "${SCRATCH_DIR}/dynamos-configuration.log" 2>&1 ); then
+    #
+    # DYNAMOS_ROOT (a separate variable - the repo path as seen by THIS
+    # shell, used for real `cp`/file-read operations, not just the k8s
+    # hostPath spec) has the same /workspace default inside
+    # dynamos-configuration.sh itself, and dev.sh never overrides it
+    # either - it silently worked inside the devcontainer only because
+    # /workspace happens to already be correct there. Running this
+    # script directly on the host (no devcontainer, no /workspace) broke
+    # it: `cp .../definitions_example.json` failed, file genuinely not
+    # at /workspace. REPO_ROOT is correct in both cases (resolves to
+    # wherever this script itself actually lives). Live-found, issue #94.
+    if ! ( cd "${REPO_ROOT}" && DYNAMOS_HOST_ROOT="${DYNAMOS_HOST_ROOT:-${REPO_ROOT}}" DYNAMOS_ROOT="${DYNAMOS_ROOT:-${REPO_ROOT}}" bash configuration/dynamos-configuration.sh > "${SCRATCH_DIR}/dynamos-configuration.log" 2>&1 ); then
         log_fail "dynamos-configuration.sh failed, see ${SCRATCH_DIR}/dynamos-configuration.log"
         return 1
     fi
@@ -516,7 +527,7 @@ EOF
         helm repo add traefik https://traefik.github.io/charts >/dev/null 2>&1
         helm repo update >/dev/null 2>&1
         helm upgrade -i --namespace traefik traefik traefik/traefik --create-namespace \
-            -f "${MVD_ROOT}/values.yaml" --version 40.3.0 >/dev/null \
+            --kube-context kind-mvd -f "${MVD_ROOT}/values.yaml" --version 40.3.0 >/dev/null \
             || { log_fail "traefik install failed"; return 1; }
         kubectl --context kind-mvd rollout status deployment/traefik -n traefik --timeout=120s >/dev/null \
             || { log_fail "traefik did not become ready"; return 1; }
