@@ -198,6 +198,9 @@ func TestGetNotMatchedElements(t *testing.T) {
 
 	result := GetNotMatchedElements(mapA)
 
+	sort.Strings(result)
+	sort.Strings(expected)
+
 	if !reflect.DeepEqual(result, expected) {
 		t.Errorf("Expected %v, got %v", expected, result)
 	}
