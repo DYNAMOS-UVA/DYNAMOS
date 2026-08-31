@@ -1,5 +1,7 @@
 # DYNAMOS
 
+For the Dataspace Protocol (DSP) layer, see [DSP_OVERVIEW.md](DSP_OVERVIEW.md).
+
 DYNAMOS: Dynamically Adaptive Microservice-based OS. A Middleware for Data Exchange Systems.
 
 This repository contains the code for the DYNAMOS proof of concept. Installation instructions and more details can be found in the thesis.
