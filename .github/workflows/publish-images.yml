@@ -8,6 +8,7 @@ jobs:
   publish-images:
     name: Build and push changed microservice images
     runs-on: ubuntu-latest
+    if: false
     steps:
       - uses: actions/checkout@v4
         with:
