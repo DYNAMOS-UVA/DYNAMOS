@@ -1,76 +1,34 @@
-# Tilt dev loop
+# Local development with Tilt
 
-[Tilt](https://tilt.dev) builds the DYNAMOS Go services from your local source and deploys them into the local kind cluster. When you save a file, Tilt builds the image again and restarts the related pods.
+Run DYNAMOS on your computer from your local source. When you save a file, [Tilt](https://tilt.dev) builds the image again and restarts the related pods.
 
-## What Tilt manages
+## Requirements
 
-| Tilt does | Tilt does not |
-|-----------|---------------|
-| Builds these images from `go/`: `orchestrator`, `policy-enforcer`, `sidecar`, `agent`, `api-gateway`, `catalog-service`, `negotiation-service`, `transfer-process-service`, `dsp-connector` | Install the infrastructure (namespaces, RabbitMQ, etcd, Linkerd, NGINX, Prometheus, `core` chart) |
-| Deploys these charts: `orchestrator`, `agents`, `thirdparty`, `catalog-service`, `negotiation-service`, `transfer-process-service`, `dsp-connector`, `api-gateway` | Build `sql-graph` (it is in `microservices.json`, but it has no source code) |
-| With a local registry only: builds the job images `sql-query`, `sql-algorithm`, `sql-anonymize`, `sql-aggregate`, `sql-test` and `sidecar` | |
+- Docker (you must be able to use it without `sudo`)
+- `curl`, `tar`, `openssl`
+- About 8 GB of free memory for Docker
 
-## Job microservices and the local registry
+You do not have to install `kind`, `kubectl`, `helm`, `tilt` or `linkerd`. `./dynamos-dev.sh up` downloads pinned versions into `.dev/bin/` (ignored by git).
 
-The agent creates the job microservices at runtime (`go/cmd/agent/deploy_job.go`). It makes the image names from environment variables:
+## Commands
 
-- `$MICROSERVICE_REPOSITORY_NAME/<name>:$<NAME>_TAG` (for example `SQL-QUERY_TAG`)
-- `$SIDECAR_REPOSITORY_NAME/sidecar:$SIDECAR_TAG`
+| Step | Command | What it does |
+|------|---------|--------------|
+| 1. Start | `./dynamos-dev.sh up` | Downloads the tools, starts the local registry and the kind cluster, and installs the infrastructure. The first time takes 5-10 minutes. After `down`, about 2 minutes (it waits until all pods are ready). |
+| 2. Develop | `tilt up` | Builds and deploys the services. Open http://localhost:10350. Use `.dev/bin/tilt up` if `tilt` is not on your `PATH`. |
+| 3. Stop Tilt | `Ctrl+C` | Stops Tilt and its port-forward. The pods continue to run. |
+| 4. Stop all | `./dynamos-dev.sh down` | Stops the cluster and registry containers. The data stays. After this step, nothing from DYNAMOS runs. |
 
-The pull policy is `Always`. Thus the node must pull each job image from a registry. An image that `kind load` puts on the node is not used.
+Other commands:
 
-When the cluster has a local registry, Tilt does these steps:
+- `./dynamos-dev.sh status`: shows the state of the containers and Tilt.
+- `./dynamos-dev.sh reset`: deletes the cluster and the registry (all data). Use it to start again from a clean state. Then run `./dynamos-dev.sh up`.
 
-1. Builds the job images and pushes them as `localhost:5001/<name>:dev` (resources with the label `job-images`).
-2. Adds the environment variables above to the agent Deployments `uva`, `vu` and `surf`, with the values `localhost:5001` and `dev`. Only the YAML that Tilt deploys changes. The charts do not change.
-3. Each new job pulls the newest `:dev` image.
-
-Without a local registry, Tilt does not do these steps, and the jobs pull the images from Docker Hub (`dynamos1`).
-
-To create the cluster with a local registry (this deletes all data in the cluster):
-
-```bash
-kind delete cluster --name dynamos
-scripts/kind-with-registry.sh
-```
-
-Then run `configuration/dynamos-configuration.sh` in the dev container. The host must have the `linkerd` CLI, or you must use the dev container:
-
-```bash
-docker run --rm --network host -v "$PWD:/workspace" -v "$HOME/.kube:/root/.kube" \
-  -v /var/run/docker.sock:/var/run/docker.sock -e DYNAMOS_HOST_ROOT="$PWD" \
-  -w /workspace dynamos-dev ./configuration/dynamos-configuration.sh
-```
-
-## Prerequisites
-
-- `tilt`, `kind`, `kubectl`, `helm` and `docker` on your `PATH`.
-- `python3` with `setuptools` and `wheel` (to build the `sql-query` image).
-- The kind cluster `dynamos` is running.
-- You ran `configuration/dynamos-configuration.sh` one time on this cluster.
-
-The Tiltfile stops if the current kube context is not `kind-dynamos`. This prevents a deployment into a different cluster.
-
-If you recreate the cluster while Tilt runs, stop Tilt and start it again. Tilt keeps the API server address of the old cluster.
-
-## Start
-
-```bash
-kubectl config use-context kind-dynamos
-tilt up
-```
-
-Open the Tilt UI at http://localhost:10350. The UI groups the resources with these labels: `core-services`, `agents`, `dsp`, `job-images`, `tools`.
-
-To deploy only some charts, give the chart names after `--`:
-
-```bash
-tilt up -- --only orchestrator --only api-gateway
-```
+The script uses only the kube context `kind-dynamos`. It does not change other clusters.
 
 ## Send requests
 
-Start the `ingress-port-forward` resource in the Tilt UI. It forwards `localhost:8080` to the NGINX ingress. Then send the request with the `Host` header:
+In the Tilt UI, start the `ingress-port-forward` resource. It forwards `localhost:8080` to the NGINX ingress:
 
 ```bash
 curl http://localhost:8080/api/v1/requestApproval \
@@ -79,14 +37,28 @@ curl http://localhost:8080/api/v1/requestApproval \
   --data-raw '{...}'
 ```
 
-## Stop
+## What Tilt builds
 
-- `Ctrl+C` stops Tilt. The pods continue to run with the last images that Tilt built.
-- `tilt down` deletes the application resources that Tilt deployed. To get the Docker Hub images back, run `configuration/dynamos-configuration.sh` again.
+| Group (Tilt label) | Images | How it is deployed |
+|--------------------|--------|--------------------|
+| `core-services`, `agents`, `dsp` | `orchestrator`, `policy-enforcer`, `api-gateway`, `agent`, `sidecar`, `catalog-service`, `negotiation-service`, `transfer-process-service`, `dsp-connector` | Tilt deploys the Helm charts in `charts/` with these images. |
+| `job-images` | `sql-query`, `sql-algorithm`, `sql-anonymize`, `sql-aggregate`, `sql-test`, `sidecar` | Pushed as `localhost:5001/<name>:dev`. The agents start jobs with these images (see below). |
+
+`sql-graph` is in `configuration/etcd_launch_files/microservices.json`, but it has no source code. Tilt cannot build it.
 
 ## How it works
 
-- Each Go image uses `go/Dockerfile.tilt`. The runtime layout is the same as `go/Dockerfile` (Alpine, binary at `/app/<name>`). BuildKit cache mounts keep the Go module and build caches, thus a rebuild after a small change is fast.
-- Tilt watches only `go/go.mod`, `go/go.sum`, `go/pkg/` and `go/cmd/<name>/`. A change in `go/pkg/` builds all images again. Tilt ignores changes to `*_test.go` files.
-- Tilt renders the charts with `helm template` and the same `values.yaml` files as `dynamos-configuration.sh`. Tilt then replaces the `dynamos1/<service>` images with the local builds. With a local registry, Tilt pushes the images to it. Without a registry, Tilt loads them into kind (`kind load`).
-- Tilt applies the rendered resources with `kubectl apply`, not `helm upgrade`. Thus `helm list` continues to show the release revision from the last time you ran the configuration script.
+- **Infrastructure:** `./dynamos-dev.sh up` runs `configuration/dynamos-configuration.sh` one time on a new cluster: namespaces, RabbitMQ, etcd, Linkerd, NGINX, Prometheus and the `core` chart. When it is complete, the script writes the ConfigMap `kube-public/dynamos-dev-setup`. If this ConfigMap exists, `up` does not run the configuration script again.
+- **Registry:** the container `kind-registry` is a Docker registry at `localhost:5001`. The kind node uses it through `/etc/containerd/certs.d`. It has no restart policy, thus it does not start after a reboot.
+- **Service images:** `go/Dockerfile.tilt` builds each Go service. The result is the same as `go/Dockerfile` (Alpine, binary at `/app/<name>`). BuildKit cache mounts keep the Go caches, thus a rebuild is fast. Tilt watches `go/go.mod`, `go/go.sum`, `go/pkg/` and `go/cmd/<name>/`. A change in `go/pkg/` builds all images again.
+- **Job images:** the agent creates the job containers at runtime (`go/cmd/agent/deploy_job.go`) as `$MICROSERVICE_REPOSITORY_NAME/<name>:$<NAME>_TAG` with pull policy `Always`. Tilt sets these variables on the agent Deployments `uva`, `vu` and `surf` (only in the YAML that Tilt applies, not in the charts). Thus each new job pulls the newest `:dev` image. `scripts/tilt-build-sql-query.sh` builds `sql-query` with the same steps as `python/Makefile`, in a temporary directory.
+- **Charts:** Tilt renders the charts with `helm template` and the same `values.yaml` files as `dynamos-configuration.sh`, and applies them with `kubectl apply`. Thus `helm list` shows the release revision from the configuration script.
+
+## Troubleshooting
+
+| Problem | Solution |
+|---------|----------|
+| Tilt shows `connection refused` to `127.0.0.1:<port>` | The cluster was recreated or restarted while Tilt ran. Stop Tilt and start it again. |
+| `Current kube context is ...` | Run `./dynamos-dev.sh up`. It selects `kind-dynamos`. |
+| Pods restart, sidecar shows `nil pointer` at `grpc_server.go` | RabbitMQ does not run. Run `kubectl get pods -n core`. If the infrastructure is damaged, run `./dynamos-dev.sh reset` and `./dynamos-dev.sh up`. |
+| The first `up` stopped with an error | Run `./dynamos-dev.sh up` again. The configuration script is safe to run again. |

@@ -56,3 +56,6 @@ go/cmd/dsp-connector/tck/*.log
 /go/agent
 /go/sidecar
 /go/policy-enforcer
+
+# Local dev tools downloaded by dynamos-dev.sh
+.dev/
