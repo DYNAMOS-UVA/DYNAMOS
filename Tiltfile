@@ -8,9 +8,11 @@
 #   - Tilt does NOT install the infrastructure. Run
 #     configuration/dynamos-configuration.sh one time first (namespaces,
 #     RabbitMQ, etcd, Linkerd, NGINX, Prometheus, core chart).
-#   - Tilt does NOT build the job microservices (sql-*, sidecar in jobs).
-#     The agent creates these jobs with "imagePullPolicy: Always", thus the
-#     jobs continue to pull the images from Docker Hub (dynamos1).
+#   - Job microservices (sql-*, sidecar in jobs): the agent creates these
+#     jobs at runtime. If the cluster has a local registry
+#     (scripts/kind-with-registry.sh), Tilt builds these images, pushes them
+#     as localhost:5001/<name>:dev and tells the agents to use them.
+#     Without a local registry, the jobs pull the images from Docker Hub.
 #
 # Usage:
 #   tilt up                      # all services
@@ -57,38 +59,15 @@ if not selected:
     selected = CHARTS.keys()
 
 # ---------------------------------------------------------------------------
-# Image builds (Go)
+# Image builds (Go services in the charts)
 # ---------------------------------------------------------------------------
-# The same runtime layout as go/Dockerfile (alpine, binary at /app/<name>).
-# The BuildKit cache mounts keep the Go module and build caches between
-# builds, thus a rebuild after a small change is fast.
-GO_DOCKERFILE = '''
-# syntax=docker/dockerfile:1
-FROM golang:1.22.5-bookworm AS builder
-ARG NAME
-WORKDIR /src
-COPY go.mod go.sum ./
-RUN --mount=type=cache,target=/go/pkg/mod go mod download
-COPY pkg ./pkg
-COPY cmd/${NAME} ./cmd/${NAME}
-RUN --mount=type=cache,target=/go/pkg/mod \\
-    --mount=type=cache,target=/root/.cache/go-build \\
-    CGO_ENABLED=0 GOOS=linux go build -o /out/${NAME} ./cmd/${NAME}
-
-FROM alpine:3.18.2
-ARG NAME
-ENV NAME=${NAME}
-RUN apk --no-cache add ca-certificates
-WORKDIR /app/
-COPY --from=builder /out/${NAME} .
-CMD ["/bin/sh", "-c", "/app/$NAME || ls -al /app"]
-'''
+GO_DOCKERFILE = 'go/Dockerfile.tilt'
 
 def go_image(name):
     docker_build(
         '%s/%s' % (REPO, name),
         context='go',
-        dockerfile_contents=GO_DOCKERFILE,
+        dockerfile=GO_DOCKERFILE,
         build_args={'NAME': name},
         # Send and watch only the files that the build uses.
         only=['go.mod', 'go.sum', 'pkg', 'cmd/' + name],
@@ -116,16 +95,90 @@ for image in images:
     go_image(image)
 
 # ---------------------------------------------------------------------------
+# Job microservice images (local registry only)
+# ---------------------------------------------------------------------------
+# The agent creates the job containers from environment variables
+# (go/cmd/agent/deploy_job.go):
+#   image = $MICROSERVICE_REPOSITORY_NAME/<name>:$<NAME>_TAG
+#   sidecar = $SIDECAR_REPOSITORY_NAME/sidecar:$SIDECAR_TAG
+# The pull policy is "Always". Thus each new job pulls the newest ":dev"
+# image from the local registry. Tilt changes only the environment of the
+# agent Deployments that it deploys. The charts do not change.
+JOB_REGISTRY = 'localhost:5001'
+JOB_TAG = 'dev'
+GO_JOB_IMAGES = ['sql-algorithm', 'sql-anonymize', 'sql-aggregate', 'sql-test', 'sidecar']
+PY_JOB_IMAGES = ['sql-query']
+AGENT_DEPLOYMENTS = ['uva', 'vu', 'surf']
+
+registry_found = str(local(
+    'kubectl --context %s get configmap local-registry-hosting -n kube-public --ignore-not-found -o name'
+    % EXPECTED_CONTEXT, quiet=True, echo_off=True)).strip() != ''
+build_job_images = registry_found and ('agents' in selected or 'thirdparty' in selected)
+
+if not registry_found:
+    print('No local registry found. Jobs (sql-*) use the Docker Hub images.')
+    print('To build them with Tilt, create the cluster with scripts/kind-with-registry.sh.')
+
+def job_image_ref(name):
+    return '%s/%s:%s' % (JOB_REGISTRY, name, JOB_TAG)
+
+if build_job_images:
+    for name in GO_JOB_IMAGES:
+        local_resource(
+            'job-image-' + name,
+            cmd=('docker build -f %s --build-arg NAME=%s -t %s go && docker push %s'
+                 % (GO_DOCKERFILE, name, job_image_ref(name), job_image_ref(name))),
+            deps=['go/go.mod', 'go/go.sum', 'go/pkg', 'go/cmd/' + name, GO_DOCKERFILE],
+            ignore=['**/*_test.go'],
+            labels=['job-images'],
+        )
+    for name in PY_JOB_IMAGES:
+        local_resource(
+            'job-image-' + name,
+            cmd='scripts/tilt-build-sql-query.sh %s' % job_image_ref(name),
+            deps=['python/' + name, 'python/dynamos-python-lib/dynamos',
+                  'python/dynamos-python-lib/protofiles', 'python/dynamos-python-lib/setup.py',
+                  'python/Dockerfile', 'scripts/tilt-build-sql-query.sh'],
+            ignore=['**/__pycache__'],
+            labels=['job-images'],
+        )
+
+def job_env():
+    env = [
+        {'name': 'MICROSERVICE_REPOSITORY_NAME', 'value': JOB_REGISTRY},
+        {'name': 'SIDECAR_REPOSITORY_NAME', 'value': JOB_REGISTRY},
+    ]
+    for name in GO_JOB_IMAGES + PY_JOB_IMAGES:
+        # Same key as getMicroserviceTag(): strings.ToUpper(name) + "_TAG".
+        env.append({'name': name.upper() + '_TAG', 'value': JOB_TAG})
+    return env
+
+def add_job_env(objects):
+    for obj in objects:
+        if obj.get('kind') != 'Deployment':
+            continue
+        name = obj['metadata']['name']
+        if name not in AGENT_DEPLOYMENTS:
+            continue
+        for container in obj['spec']['template']['spec']['containers']:
+            if container['name'] == name:
+                container['env'] = (container.get('env') or []) + job_env()
+    return objects
+
+# ---------------------------------------------------------------------------
 # Helm charts
 # ---------------------------------------------------------------------------
 # helm() renders the chart locally and Tilt applies the result. The values
 # files are the same as in dynamos-configuration.sh.
 for chart in selected:
-    k8s_yaml(helm(
+    rendered = helm(
         'charts/' + chart,
         name=CHARTS[chart],
         values=['charts/%s/values.yaml' % chart],
-    ))
+    )
+    if build_job_images and chart in ['agents', 'thirdparty']:
+        rendered = encode_yaml_stream(add_job_env(decode_yaml_stream(rendered)))
+    k8s_yaml(rendered)
 
 # ---------------------------------------------------------------------------
 # Tilt UI labels
