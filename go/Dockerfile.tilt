@@ -1,0 +1,23 @@
+# syntax=docker/dockerfile:1
+# Dockerfile for the Tilt dev loop (see the Tiltfile in the repo root).
+# Build context: go/. Build argument NAME: the directory in go/cmd/.
+# The runtime layout is the same as go/Dockerfile (binary at /app/<name>).
+# BuildKit cache mounts keep the Go module and build caches.
+FROM golang:1.22.5-bookworm AS builder
+ARG NAME
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
+COPY pkg ./pkg
+COPY cmd/${NAME} ./cmd/${NAME}
+RUN --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    CGO_ENABLED=0 GOOS=linux go build -o /out/${NAME} ./cmd/${NAME}
+
+FROM alpine:3.18.2
+ARG NAME
+ENV NAME=${NAME}
+RUN apk --no-cache add ca-certificates
+WORKDIR /app/
+COPY --from=builder /out/${NAME} .
+CMD ["/bin/sh", "-c", "/app/$NAME || ls -al /app"]
