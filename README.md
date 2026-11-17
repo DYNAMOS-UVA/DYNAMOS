@@ -41,6 +41,18 @@ The Fabric-CloudLab profile can be cloned and adapted from the [dynamos-cluster]
   - [14. Services crash because the connection to RabbitMQ does not work](#14-services-crash-because-the-connection-to-rabbitmq-does-not-work)
 
 
+# Quick start with Tilt
+
+To run DYNAMOS locally from source, you need only Docker:
+
+```bash
+./dynamos-dev.sh up     # tools, local registry, kind cluster, infrastructure
+tilt up                 # build and deploy the services (or .dev/bin/tilt up)
+./dynamos-dev.sh down   # when you are done: stop all containers
+```
+
+See [Local development with Tilt](docs/development_guide/Develop/Tilt.md).
+
 # Dev Container (recommended)
 
 Instead of installing all dependencies locally you can use the provided dev container, which bundles Go, protoc, Node.js, kubectl, Helm, Linkerd, k9s, and etcdctl.
