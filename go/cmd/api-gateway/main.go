@@ -53,6 +53,9 @@ func main() {
 		logger.Sugar().Fatalf("Failed to create ocagent-exporter: %v", err)
 	}
 
+	// Fail at startup: without a verifier every request is rejected.
+	callerVerifier := mustBuildCallerVerifier()
+
 	conn = lib.GetGrpcConnection(grpcAddr)
 	defer conn.Close()
 	c = lib.InitializeSidecarMessaging(conn, &pb.InitRequest{ServiceName: fmt.Sprintf("%s-in", serviceName), RoutingKey: fmt.Sprintf("%s-in", serviceName), QueueAutoDelete: false})
@@ -100,7 +103,9 @@ func main() {
 	apiMux.Handle("/socket.io/", server)
 	logger.Info(apiVersion) // prints /api/v1
 
-	mux.Handle(apiVersion+"/", http.StripPrefix(apiVersion, apiMux))
+	// Every public API route needs an authenticated caller. CORS stays
+	// outside this, so browser preflight requests still work.
+	mux.Handle(apiVersion+"/", http.StripPrefix(apiVersion, callerAuth(callerVerifier)(apiMux)))
 
 	logger.Sugar().Infow("Starting http server on: ", "port", port)
 	go func() {

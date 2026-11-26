@@ -158,7 +158,7 @@ func updateArchetype(allowedArchetypes string) error {
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "bearer 1234")
+	setOperatorToken(req.Header)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)

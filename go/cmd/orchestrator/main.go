@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/auth"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
@@ -39,6 +40,13 @@ func main() {
 	_, err := lib.InitTracer(serviceName)
 	if err != nil {
 		logger.Sugar().Fatalf("Failed to create ocagent-exporter: %v", err)
+	}
+
+	// Fail at startup, not on the first request: without an issuer no
+	// approved job could reach its agents.
+	tokenIssuer, err = auth.IssuerFromEnv(tokenIssuerEnvPrefix)
+	if err != nil {
+		logger.Sugar().Fatalf("Failed to configure job token issuer: %v", err)
 	}
 
 	conn = lib.GetGrpcConnection(grpcAddr)

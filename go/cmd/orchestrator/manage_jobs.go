@@ -352,10 +352,17 @@ func handleRequestApproval(ctx context.Context, validationResponse *pb.Validatio
 		}
 	}
 
-	result.Auth = validationResponse.Auth
+	tokens, err := issueProviderTokens(ctx, tokenIssuer, validationResponse.User.UserName,
+		compositionRequest.JobName, validationResponse.RequestType, userTargets)
+	if err != nil {
+		logger.Sugar().Errorw("could not issue job tokens", "jobId", compositionRequest.JobName, "error", err)
+		result.Error = "Request was approved, but access tokens for the providers could not be issued"
+		c.SendRequestApprovalResponse(ctx, result)
+		return
+	}
 
-	result.AuthorizedProviders = make(map[string]string)
 	result.AuthorizedProviders = userTargets
+	result.ProviderTokens = tokens
 	result.JobId = compositionRequest.JobName
 
 	c.SendRequestApprovalResponse(ctx, result)

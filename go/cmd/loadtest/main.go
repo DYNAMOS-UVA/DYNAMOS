@@ -31,14 +31,14 @@ type CustomMetrics struct {
 
 func sendDataRequest(res *vegeta.Result) error {
 
-	jsonData, endpoint := createDataRequest(res)
+	jsonData, endpoint, token := createDataRequest(res)
 	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "bearer 1234")
+	req.Header.Set("Authorization", "Bearer "+token)
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -172,7 +172,9 @@ func main() {
 
 }
 
-func createDataRequest(res *vegeta.Result) ([]byte, string) {
+// createDataRequest returns the body, the agent endpoint and the
+// orchestrator-issued job token for that agent.
+func createDataRequest(res *vegeta.Result) ([]byte, string, string) {
 	acceptedRequest, err := getAcceptedDataRequest(res)
 	if err != nil {
 		logger.Sugar().Warnf("error: %v", err)
@@ -188,14 +190,16 @@ func createDataRequest(res *vegeta.Result) ([]byte, string) {
 
 	target := ""
 	url := ""
+	token := ""
 	for k, v := range acceptedRequest.AuthorizedProviders {
 		target = strings.ToLower(k)
 		url = v
+		token = acceptedRequest.ProviderTokens[k]
 		break
 	}
 	endpoint := fmt.Sprintf("http://%s:80/agent/v1/sqlDataRequest/%s", url, target)
 	// logger.Info(string(jsonData))
-	return jsonData, endpoint
+	return jsonData, endpoint, token
 }
 
 func requesApprovalTargeter(res *vegeta.Result) vegeta.Targeter {
@@ -204,6 +208,7 @@ func requesApprovalTargeter(res *vegeta.Result) vegeta.Targeter {
 
 	headers := http.Header{}
 	headers.Add("Content-Type", "application/json")
+	setOperatorToken(headers)
 
 	return func(t *vegeta.Target) error {
 		t.Method = "POST"
@@ -216,16 +221,25 @@ func requesApprovalTargeter(res *vegeta.Result) vegeta.Targeter {
 
 func dataRequestTargeter(res *vegeta.Result) vegeta.Targeter {
 
+	jsonData, endpoint, token := createDataRequest(res)
+
 	headers := http.Header{}
 	headers.Add("Content-Type", "application/json")
-	headers.Add("Authorization", "bearer 1234")
+	headers.Add("Authorization", "Bearer "+token)
 
-	jsonData, endpoint := createDataRequest(res)
 	return func(t *vegeta.Target) error {
 		t.Method = "POST"
 		t.URL = endpoint
 		t.Body = jsonData
 		t.Header = headers
 		return nil
+	}
+}
+
+// setOperatorToken adds the operator token from DYNAMOS_TOKEN, used for
+// calls to the orchestrator API. Unset sends no Authorization header.
+func setOperatorToken(h http.Header) {
+	if tok := os.Getenv("DYNAMOS_TOKEN"); tok != "" {
+		h.Set("Authorization", "Bearer "+tok)
 	}
 }

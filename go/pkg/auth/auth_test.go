@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -274,4 +275,71 @@ func TestRegisterPanicsOnDuplicate(t *testing.T) {
 	f := func(Settings) (Verifier, error) { return DenyAll, nil }
 	Register("x", f)
 	assert.Panics(t, func() { Register("x", f) })
+}
+
+type fakeIssuer struct{}
+
+func (fakeIssuer) Issue(context.Context, Principal, Grant) (Token, error) {
+	return Token{Value: "t"}, nil
+}
+
+func TestRegistryIssuers(t *testing.T) {
+	r := NewRegistry()
+	f := func(s Settings) (Issuer, error) {
+		if _, err := s.Require("key"); err != nil {
+			return nil, err
+		}
+		return fakeIssuer{}, nil
+	}
+	require.NoError(t, r.RegisterIssuer("fake", f))
+	assert.Error(t, r.RegisterIssuer("fake", f), "duplicate")
+	assert.Error(t, r.RegisterIssuer("", f), "empty name")
+	assert.Error(t, r.RegisterIssuer("nil", nil), "nil factory")
+
+	// Verifier and issuer names are separate namespaces.
+	require.NoError(t, r.Register("fake", func(Settings) (Verifier, error) { return DenyAll, nil }))
+	assert.Equal(t, []string{"fake"}, r.IssuerNames())
+	assert.Equal(t, []string{"fake"}, r.Names())
+
+	_, err := r.BuildIssuer("missing", nil)
+	assert.ErrorIs(t, err, ErrUnknownProvider)
+	_, err = r.BuildIssuer("fake", nil)
+	assert.ErrorIs(t, err, ErrProviderConfig)
+	i, err := r.BuildIssuer("fake", Settings{"key": "k"})
+	require.NoError(t, err)
+	tok, err := i.Issue(context.Background(), Principal{}, Grant{})
+	require.NoError(t, err)
+	assert.Equal(t, "t", tok.Value)
+}
+
+func TestRegisterIssuerPanicsOnDuplicate(t *testing.T) {
+	saved := DefaultRegistry
+	t.Cleanup(func() { DefaultRegistry = saved })
+	DefaultRegistry = NewRegistry()
+
+	f := func(Settings) (Issuer, error) { return fakeIssuer{}, nil }
+	RegisterIssuer("x", f)
+	assert.Panics(t, func() { RegisterIssuer("x", f) })
+}
+
+func TestSettingsHelpers(t *testing.T) {
+	s := Settings{"list": " a, ,b ,", "blank": "  ", "d": "90s", "bad": "soon", "neg": "-1s"}
+
+	assert.Equal(t, []string{"a", "b"}, s.List("list"))
+	assert.Nil(t, s.List("blank"))
+	assert.Nil(t, s.List("absent"))
+
+	d, err := s.Duration("d", time.Second)
+	require.NoError(t, err)
+	assert.Equal(t, 90*time.Second, d)
+	d, err = s.Duration("absent", time.Second)
+	require.NoError(t, err)
+	assert.Equal(t, time.Second, d)
+	_, err = s.Duration("bad", 0)
+	assert.ErrorIs(t, err, ErrProviderConfig)
+	_, err = s.Duration("neg", 0)
+	assert.ErrorIs(t, err, ErrProviderConfig)
+
+	_, err = s.Require("blank")
+	assert.ErrorIs(t, err, ErrProviderConfig)
 }

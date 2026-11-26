@@ -61,6 +61,12 @@ func sqlDataRequestHandler() http.HandlerFunc {
 			return
 		}
 
+		// Bind the verified token to this job and user before any lookup.
+		if err := authorizeJob(r.Context(), sqlDataRequest.GetUser().GetUserName(), sqlDataRequest.RequestMetadata.JobId); err != nil {
+			logAuthFailure(w, r, err)
+			return
+		}
+
 		// Get the matching composition request and determine our role
 		// /agents/jobs/UVA/jorrit-3141334
 		compositionRequest, err := getCompositionRequest(sqlDataRequest.User.UserName, sqlDataRequest.RequestMetadata.JobId)

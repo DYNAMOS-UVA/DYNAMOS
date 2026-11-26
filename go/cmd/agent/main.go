@@ -62,6 +62,9 @@ func main() {
 		port = ":8083"
 	}
 
+	// Fail at startup: without a verifier every data request is rejected.
+	requestVerifier := mustBuildRequestVerifier()
+
 	_, err := lib.InitTracer(serviceName)
 	if err != nil {
 		logger.Sugar().Fatalf("Failed to create ocagent-exporter: %v", err)
@@ -92,7 +95,7 @@ func main() {
 
 	// apiMux.Handle("/archetypes/", &ochttp.Handler{Handler: archetypesHandler(etcdClient, "/archetypes")})
 
-	wrappedAgentMux := authMiddleware(agentMux)
+	wrappedAgentMux := authMiddleware(requestVerifier, sqlDataRequestType)(agentMux)
 
 	mux := http.NewServeMux()
 	mux.Handle(fmt.Sprintf("/agent/v1/sqlDataRequest/%s", strings.ToLower(serviceName)), wrappedAgentMux)
