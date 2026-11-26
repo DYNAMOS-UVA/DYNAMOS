@@ -35,7 +35,6 @@ func main() {
 	os.Exit(0)
 }
 
-
 func messageHandler(config *msinit.Configuration) func(ctx context.Context, msComm *pb.MicroserviceCommunication) error {
 	return func(ctx context.Context, msComm *pb.MicroserviceCommunication) error {
 		ctx, span, err := lib.StartRemoteParentSpan(ctx, serviceName+"/func: messageHandler", msComm.Traces)

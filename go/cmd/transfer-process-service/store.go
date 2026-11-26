@@ -17,8 +17,8 @@ import (
 // newTransferProcess in transfer.go. The key does not need a separate
 // party segment.
 type Store struct {
-	mu         sync.RWMutex
-	cache      map[string]TransferProcess
+	mu    sync.RWMutex
+	cache map[string]TransferProcess
 	// consumerCache is a separate map from cache, not just a separate key
 	// prefix in the same map. A Provider-role ProviderPid and a
 	// Consumer-role ConsumerPid are generated under different urn

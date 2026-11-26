@@ -16,8 +16,8 @@ import (
 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.opencensus.io/trace/propagation"
 	"go.opencensus.io/trace"
+	"go.opencensus.io/trace/propagation"
 )
 
 func requestHandler() http.HandlerFunc {

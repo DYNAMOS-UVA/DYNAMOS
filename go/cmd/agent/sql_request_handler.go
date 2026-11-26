@@ -28,7 +28,7 @@ func sqlDataRequestHandler() http.HandlerFunc {
 		ctxWithTimeout, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 		defer cancel()
 
-		// Get the sql data request 
+		// Get the sql data request
 		sqlDataRequest := &pb.SqlDataRequest{}
 		sqlDataRequest.RequestMetadata = &pb.RequestMetadata{}
 
