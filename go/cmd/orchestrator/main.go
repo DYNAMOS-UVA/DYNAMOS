@@ -12,7 +12,6 @@ import (
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
-	"github.com/gorilla/handlers"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.opencensus.io/plugin/ochttp"
 	"google.golang.org/grpc"
@@ -63,9 +62,14 @@ func main() {
 	}()
 
 	go registerPolicyEnforcerConfiguration()
-	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
-	originsOk := handlers.AllowedOrigins([]string{"*"})
-	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
+
+	// Fail at startup: an orchestrator API without auth would let anyone
+	// rewrite agreements and archetypes in etcd.
+	apiVerifier := mustBuildAPIVerifier()
+	corsOrigins, err := api.CORSOriginsFromEnv()
+	if err != nil {
+		logger.Sugar().Fatalf("Invalid CORS configuration: %v", err)
+	}
 
 	mux := http.NewServeMux()
 
@@ -91,11 +95,13 @@ func main() {
 
 	logger.Info(apiVersion) // prints /api/v1
 
-	mux.Handle(apiVersion+"/", http.StripPrefix(apiVersion, apiMux))
+	// Every API route needs an authenticated caller with the right scope.
+	// CORS stays outside, so browser preflight requests still work.
+	mux.Handle(apiVersion+"/", http.StripPrefix(apiVersion, apiAuth(apiVerifier, apiScopesFromEnv())(apiMux)))
 
 	logger.Sugar().Infow("Starting http server on: ", "port", port)
 	go func() {
-		if err := http.ListenAndServe(port, api.LogMiddleware(handlers.CORS(originsOk, headersOk, methodsOk)(mux))); err != nil {
+		if err := http.ListenAndServe(port, api.LogMiddleware(api.CORS(corsOrigins)(mux))); err != nil {
 			logger.Sugar().Fatalw("Error starting HTTP server: %s", err)
 		}
 	}()

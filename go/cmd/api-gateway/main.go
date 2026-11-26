@@ -12,7 +12,6 @@ import (
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	socketio "github.com/googollee/go-socket.io"
-	"github.com/gorilla/handlers"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.opencensus.io/plugin/ochttp"
 	"google.golang.org/grpc"
@@ -69,9 +68,10 @@ func main() {
 		wg.Done() // Decrement the WaitGroup counter when the goroutine finishes
 	}()
 
-	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
-	originsOk := handlers.AllowedOrigins([]string{"*"})
-	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
+	corsOrigins, err := api.CORSOriginsFromEnv()
+	if err != nil {
+		logger.Sugar().Fatalf("Invalid CORS configuration: %v", err)
+	}
 
 	mux := http.NewServeMux()
 
@@ -109,7 +109,7 @@ func main() {
 
 	logger.Sugar().Infow("Starting http server on: ", "port", port)
 	go func() {
-		if err := http.ListenAndServe(port, api.LogMiddleware(handlers.CORS(originsOk, headersOk, methodsOk)(mux))); err != nil {
+		if err := http.ListenAndServe(port, api.LogMiddleware(api.CORS(corsOrigins)(mux))); err != nil {
 			logger.Sugar().Fatalw("Error starting HTTP server: %s", err)
 		}
 	}()
