@@ -212,6 +212,11 @@ echo "  RabbitMQ password synced."
 
 sleep 3
 
+# Keys for the job and service tokens. The services do not start without
+# the "dynamos-auth" Secrets. The script does not replace existing keys.
+echo "Installing auth keys and Secrets..."
+"${DYNAMOS_ROOT}/scripts/auth-secrets.sh"
+
 echo "Installing orchestrator layer..."
 helm upgrade -i -f "${orchestrator_chart}/values.yaml" orchestrator ${orchestrator_chart}
 

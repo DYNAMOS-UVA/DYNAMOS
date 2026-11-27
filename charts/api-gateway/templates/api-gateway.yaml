@@ -23,6 +23,9 @@ spec:
         env:
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}
+        {{- include "dynamos.authEnv" . | trim | nindent 8 }}
+        volumeMounts:
+        {{- include "dynamos.authVolumeMount" . | nindent 8 }}
         # resources:
         #   requests:
         #     memory: "128Mi"
@@ -41,6 +44,8 @@ spec:
           value: normal_user
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}
+      volumes:
+      {{- include "dynamos.authVolume" . | nindent 6 }}
 
 ---
 apiVersion: v1

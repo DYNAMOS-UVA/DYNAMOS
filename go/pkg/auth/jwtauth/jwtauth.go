@@ -2,7 +2,7 @@
 // tokens: short-lived JWTs signed with Ed25519 (alg "EdDSA").
 //
 // One component holds the private key and issues tokens (in the legacy
-// flow: policy-enforcer, for each approved job and data steward). Every
+// flow: the orchestrator, for each approved job and data steward). Every
 // receiving service holds only the public key(s) and verifies locally.
 //
 // Token claims:

@@ -25,6 +25,9 @@ spec:
           value: VU
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}
+        {{- include "dynamos.authEnv" . | trim | nindent 8 }}
+        volumeMounts:
+        {{- include "dynamos.authVolumeMount" . | nindent 8 }}
       - name: sidecar
         image: {{ .Values.dockerArtifactAccount }}/sidecar:{{ .Values.branchNameTag }}
         imagePullPolicy: Always
@@ -38,6 +41,8 @@ spec:
           value: normal_user
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}
+      volumes:
+      {{- include "dynamos.authVolume" . | nindent 6 }}
 
 ---
 

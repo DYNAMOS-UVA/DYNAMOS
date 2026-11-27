@@ -6,8 +6,11 @@
 #   ./dynamos-dev.sh down    Stop all containers. The data stays.
 #   ./dynamos-dev.sh reset   Delete the cluster and the registry.
 #   ./dynamos-dev.sh status  Show the state of the containers.
+#   ./dynamos-dev.sh tokens  Show the dev auth tokens as shell exports.
 #
 # Requirements on the host: docker, curl, tar, openssl.
+#
+# The auth keys and dev tokens are in .dev/auth (see scripts/auth-secrets.sh).
 # The script downloads kind, kubectl, helm, tilt and linkerd (pinned
 # versions) into .dev/bin. It does not change the tools on your PATH.
 #
@@ -20,6 +23,7 @@ USER_PATH="${PATH}"
 export PATH="${BIN_DIR}:${PATH}"
 
 CLUSTER="dynamos"
+AUTH_KEYS_DIR="${REPO_ROOT}/.dev/auth"
 CONTEXT="kind-${CLUSTER}"
 NODE="${CLUSTER}-control-plane"
 NODE_IMAGE="kindest/node:v1.30.0@sha256:047357ac0cfea04663786a612ba1eaba9702bef25227a794b52890dd8bcd692e"
@@ -222,10 +226,17 @@ install_infra() {
     # works.
     rm -f "${REPO_ROOT}/configuration/k8s_service_files/definitions.json"
     echo "  Run configuration/dynamos-configuration.sh (5-10 min)"
-    DYNAMOS_ROOT="${REPO_ROOT}" DYNAMOS_HOST_ROOT="${REPO_ROOT}" \
+    DYNAMOS_ROOT="${REPO_ROOT}" DYNAMOS_HOST_ROOT="${REPO_ROOT}" AUTH_KEYS_DIR="${AUTH_KEYS_DIR}" \
         "${REPO_ROOT}/configuration/dynamos-configuration.sh"
     kubectl --context "${CONTEXT}" create configmap "${SETUP_MARKER}" -n kube-public \
         --from-literal=completed="$(date -u +%Y-%m-%dT%H:%M:%SZ)" >/dev/null
+}
+
+# The services do not start without the "dynamos-auth" Secrets. The
+# script is idempotent, so a cluster made before the auth change gets them
+# on the next "up".
+install_auth() {
+    AUTH_KEYS_DIR="${AUTH_KEYS_DIR}" KUBE_CONTEXT="${CONTEXT}" "${REPO_ROOT}/scripts/auth-secrets.sh"
 }
 
 # ---------------------------------------------------------------------------
@@ -240,12 +251,19 @@ cmd_up() {
     start_cluster
     log "Infrastructure"
     install_infra
+    log "Auth keys and Secrets"
+    install_auth
 
     local tilt_cmd=".dev/bin/tilt up"
     PATH="${USER_PATH}" command -v tilt >/dev/null 2>&1 && tilt_cmd="tilt up"
     log "Ready. Next step:"
     echo "    ${tilt_cmd}"
+    echo "  Dev auth tokens for curl and scripts: eval \"\$(./dynamos-dev.sh tokens)\""
     echo "  When you are done: Ctrl+C in Tilt, then ./dynamos-dev.sh down"
+}
+
+cmd_tokens() {
+    AUTH_KEYS_DIR="${AUTH_KEYS_DIR}" "${REPO_ROOT}/scripts/auth-secrets.sh" --print
 }
 
 cmd_down() {
@@ -289,7 +307,8 @@ case "${1:-}" in
     down) cmd_down ;;
     reset) shift; cmd_reset "$@" ;;
     status) cmd_status ;;
+    tokens) cmd_tokens ;;
     *)
-        sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//'
+        sed -n '2,10p' "$0" | sed 's/^# \{0,1\}//'
         exit 1 ;;
 esac

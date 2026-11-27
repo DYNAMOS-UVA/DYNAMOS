@@ -26,6 +26,11 @@ spec:
           value: SURF
         - name: ETCD_ENDPOINTS
           value: {{ .Values.etcdEndpoints | quote }}
+        {{- include "dynamos.authEnv" . | trim | nindent 8 }}
+        volumeMounts:
+        {{- include "dynamos.authVolumeMount" . | nindent 8 }}
+      volumes:
+      {{- include "dynamos.authVolume" . | nindent 6 }}
 
 ---
 

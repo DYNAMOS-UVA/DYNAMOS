@@ -5,3 +5,30 @@ tracingEndpoint: collector.linkerd-jaeger:55678
 branchNameTag: "main"
 dockerArtifactAccount: "dynamos1"
 
+
+# Authentication (see templates/_auth.tpl and scripts/auth-secrets.sh).
+auth:
+  secretName: dynamos-auth
+  env:
+    # Callers of the orchestrator API (operators and tooling). Required:
+    # the orchestrator does not start without it. Set your IdP, for example:
+    #   AUTH_PROVIDERS: oidc
+    #   AUTH_OIDC_ISSUER: https://login.microsoftonline.com/<tenant>/v2.0
+    #   AUTH_OIDC_AUDIENCE: api://dynamos-orchestrator
+    # ORCHESTRATOR_READ_SCOPE and ORCHESTRATOR_WRITE_SCOPE change the
+    # scopes the API requires (default orchestrator:read, orchestrator:write).
+    AUTH_PROVIDERS: ""
+    # Job tokens for the agents. The agents trust orchestrator.pub.pem.
+    TOKEN_ISSUER_PROVIDER: jwt
+    TOKEN_ISSUER_JWT_ISSUER: dynamos-orchestrator
+    TOKEN_ISSUER_JWT_PRIVATE_KEY_FILE: /etc/dynamos/auth/orchestrator.key.pem
+  # Development only (Tilt sets enabled=true).
+  devToken:
+    enabled: false
+    secretKey: dev-operator-token
+    subject: dynamos-operator
+    kind: service
+    scopes: orchestrator:read,orchestrator:write
+
+# Browser origins allowed to call the API, comma-separated. Empty: no CORS.
+corsAllowedOrigins: ""

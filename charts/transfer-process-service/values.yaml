@@ -2,3 +2,13 @@ Namespace: transfer-process-service
 etcdEndpoints: "http://etcd-0.etcd-headless.core.svc.cluster.local:2379,http://etcd-1.etcd-headless.core.svc.cluster.local:2379,http://etcd-2.etcd-headless.core.svc.cluster.local:2379"
 branchNameTag: "main"
 dockerArtifactAccount: "dynamos1"
+
+# Authentication (see templates/_auth.tpl and scripts/auth-secrets.sh).
+# Tokens this service sends to api-gateway when it starts a job for a DSP
+# participant. api-gateway trusts transfer-process-service.pub.pem.
+auth:
+  secretName: dynamos-auth
+  env:
+    TOKEN_ISSUER_PROVIDER: jwt
+    TOKEN_ISSUER_JWT_ISSUER: dynamos-transfer-process-service
+    TOKEN_ISSUER_JWT_PRIVATE_KEY_FILE: /etc/dynamos/auth/transfer-process-service.key.pem

@@ -23,9 +23,11 @@ spec:
         env:
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}
+        {{- include "dynamos.authEnv" . | trim | nindent 8 }}
         volumeMounts:
         - name: etcd-startup
           mountPath: /app/etcd
+        {{- include "dynamos.authVolumeMount" . | nindent 8 }}
         # resources:
         #   requests:
         #     memory: "128Mi"
@@ -48,6 +50,7 @@ spec:
       - name: etcd-startup
         persistentVolumeClaim:
           claimName: etcd-pvc
+      {{- include "dynamos.authVolume" . | nindent 6 }}
 
 ---
 apiVersion: v1

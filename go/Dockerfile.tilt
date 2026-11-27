@@ -3,8 +3,13 @@
 # Build context: go/. Build argument NAME: the directory in go/cmd/.
 # The runtime layout is the same as go/Dockerfile (binary at /app/<name>).
 # BuildKit cache mounts keep the Go module and build caches.
+#
+# GO_TAGS defaults to "authdev": it turns on the static-dev auth provider
+# (pkg/auth/staticdev), so the dev tokens from scripts/auth-secrets.sh work.
+# go/Dockerfile (the production images) never sets this tag.
 FROM golang:1.22.5-bookworm AS builder
 ARG NAME
+ARG GO_TAGS=authdev
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN --mount=type=cache,target=/go/pkg/mod go mod download
@@ -12,7 +17,7 @@ COPY pkg ./pkg
 COPY cmd/${NAME} ./cmd/${NAME}
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 GOOS=linux go build -o /out/${NAME} ./cmd/${NAME}
+    CGO_ENABLED=0 GOOS=linux go build -tags "${GO_TAGS}" -o /out/${NAME} ./cmd/${NAME}
 
 FROM alpine:3.18.2
 ARG NAME

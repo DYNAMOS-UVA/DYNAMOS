@@ -127,9 +127,16 @@ def add_job_env(objects):
 # ---------------------------------------------------------------------------
 # Deploy
 # ---------------------------------------------------------------------------
+# Auth: the charts mount the Secret "dynamos-auth" from
+# scripts/auth-secrets.sh (./dynamos-dev.sh up runs it). The Tilt images are
+# built with -tags authdev, so these charts also accept the static dev
+# tokens. Show them with: ./dynamos-dev.sh tokens
+DEV_TOKEN_CHARTS = ['orchestrator', 'api-gateway']
+
 for chart in selected:
     release, _, workloads = CHARTS[chart]
-    rendered = helm('charts/' + chart, name=release, values=['charts/%s/values.yaml' % chart])
+    sets = ['auth.devToken.enabled=true'] if chart in DEV_TOKEN_CHARTS else []
+    rendered = helm('charts/' + chart, name=release, values=['charts/%s/values.yaml' % chart], set=sets)
     if chart in ['agents', 'thirdparty']:
         rendered = encode_yaml_stream(add_job_env(decode_yaml_stream(rendered)))
     k8s_yaml(rendered)
