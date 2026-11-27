@@ -131,7 +131,7 @@ def add_job_env(objects):
 # scripts/auth-secrets.sh (./dynamos-dev.sh up runs it). The Tilt images are
 # built with -tags authdev, so these charts also accept the static dev
 # tokens. Show them with: ./dynamos-dev.sh tokens
-DEV_TOKEN_CHARTS = ['orchestrator', 'api-gateway']
+DEV_TOKEN_CHARTS = ['orchestrator', 'api-gateway', 'negotiation-service']
 
 for chart in selected:
     release, _, workloads = CHARTS[chart]

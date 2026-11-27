@@ -118,6 +118,23 @@ func transfersCollectionHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Check the agreement before anything is saved: a transfer that is
+	// saved starts a job for body.Participant.
+	if err := checkAgreement(body.Participant, body.AgreementId); err != nil {
+		switch {
+		case errors.Is(err, ErrAgreementNotFound):
+			logger.Sugar().Infow("transfer request refused", "participant", body.Participant, "agreementId", body.AgreementId, "reason", err.Error())
+			writeInternalError(w, http.StatusNotFound, "agreement-not-found", "agreementId does not match a FINALIZED negotiation of this participant")
+		case errors.Is(err, ErrAgreementNotFinalized):
+			logger.Sugar().Infow("transfer request refused", "participant", body.Participant, "agreementId", body.AgreementId, "reason", err.Error())
+			writeInternalError(w, http.StatusConflict, "agreement-not-finalized", "the negotiation of agreementId is not FINALIZED")
+		default:
+			logger.Sugar().Errorw("failed to check agreement", "agreementId", body.AgreementId, "error", err)
+			writeInternalError(w, http.StatusInternalServerError, "internal-error", "failed to check agreement")
+		}
+		return
+	}
+
 	t := newTransferProcess(party, body.ConsumerPid, body.Participant, body.AgreementId, body.Format, body.CallbackAddress, body.DataAddress)
 	if !saveOrError(w, t) {
 		return

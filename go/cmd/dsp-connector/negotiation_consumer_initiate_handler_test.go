@@ -47,6 +47,7 @@ func initiateBody() string {
 }
 
 func TestNegotiationConsumerInitiateHandler_Success(t *testing.T) {
+	allowInitiators(t, "did:web:localhost%3A9999")
 	received := startFixtureConsumerCollectionService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/initiate", bytes.NewBufferString(initiateBody()))
@@ -63,6 +64,9 @@ func TestNegotiationConsumerInitiateHandler_Success(t *testing.T) {
 	// The DAT-verified caller, not body.providerId, must become
 	// remoteParticipant - see the handler's own doc comment on why.
 	assert.Equal(t, "did:web:localhost%3A9999", (*received)["remoteParticipant"])
+	// DYNAMOS's own identity is the verified DID, never the caller's token:
+	// negotiation-service stores it.
+	assert.Equal(t, "did:web:localhost%3A9999", (*received)["participant"])
 	assert.Equal(t, "http://localhost:8083", (*received)["providerEndpoint"])
 	offer, ok := (*received)["offer"].(map[string]any)
 	require.True(t, ok)
@@ -84,6 +88,7 @@ func TestNegotiationConsumerInitiateHandler_MissingAuthorization(t *testing.T) {
 }
 
 func TestNegotiationConsumerInitiateHandler_MissingOfferID(t *testing.T) {
+	allowInitiators(t, "did:web:localhost%3A9999")
 	startFixtureConsumerCollectionService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/initiate",
@@ -100,6 +105,7 @@ func TestNegotiationConsumerInitiateHandler_MissingOfferID(t *testing.T) {
 }
 
 func TestNegotiationConsumerInitiateHandler_MissingConnectorAddress(t *testing.T) {
+	allowInitiators(t, "did:web:localhost%3A9999")
 	startFixtureConsumerCollectionService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/initiate",
@@ -125,6 +131,7 @@ func TestNegotiationConsumerInitiateHandler_WrongMethod(t *testing.T) {
 }
 
 func TestNegotiationConsumerInitiateHandler_UpstreamFailure(t *testing.T) {
+	allowInitiators(t, "did:web:localhost%3A9999")
 	mux := http.NewServeMux()
 	mux.HandleFunc("/internal/v1/negotiations/consumer", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusInternalServerError)
@@ -143,4 +150,21 @@ func TestNegotiationConsumerInitiateHandler_UpstreamFailure(t *testing.T) {
 	var ne negotiationError
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ne))
 	assert.Equal(t, "upstream-error", ne.Code)
+}
+
+// TestNegotiationConsumerInitiateHandler_NotInitiator checks that a valid
+// DAT is not enough: the caller must be in CONSUMER_INITIATORS, and
+// negotiation-service gets no call.
+func TestNegotiationConsumerInitiateHandler_NotInitiator(t *testing.T) {
+	allowInitiators(t, "did:web:operator.example")
+	received := startFixtureConsumerCollectionService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/negotiations/initiate", bytes.NewBufferString(initiateBody()))
+	req.Header.Set("Authorization", testAuthHeader("did:web:localhost%3A9999"))
+	rec := httptest.NewRecorder()
+
+	negotiationConsumerInitiateHandler(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	assert.Nil(t, *received, "negotiation-service must not be called")
 }

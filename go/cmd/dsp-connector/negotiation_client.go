@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
+
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 )
 
 // ErrNegotiationNotFound / ErrNegotiationInvalidTransition: sentinels so
@@ -46,7 +47,9 @@ func checkNegotiationOwnership(n *negotiationRecord, participant string) error {
 	return nil
 }
 
-var negotiationServiceClient = &http.Client{Timeout: 5 * time.Second}
+// negotiationServiceClient sends a service token with each call (see
+// internal_auth.go). negotiation-service refuses calls without one.
+var negotiationServiceClient = internalServiceClient(func() string { return negotiationServiceAudience }, api.NegotiationServiceScope)
 
 // negotiationServiceErrorCodes maps negotiation-service's internal-API error
 // codes (go/cmd/negotiation-service/negotiation_handler.go) to this

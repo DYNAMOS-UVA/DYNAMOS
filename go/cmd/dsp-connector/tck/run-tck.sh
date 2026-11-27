@@ -11,6 +11,8 @@ LOG_FILE="${1:-$SCRIPT_DIR/last-run.log}"
 if ! curl -sf http://localhost:8090/health > /dev/null; then
   echo "dsp-connector is not reachable on :8090 - start it first:" >&2
   echo "  (cd go/cmd/dsp-connector && go run -tags local .)" >&2
+  echo "It needs TOKEN_ISSUER_* settings, and transfer-process-service needs AUTH_*." >&2
+  echo "See docs/development_guide/Auth/Operations.md (Run the DSP services without Kubernetes)." >&2
   exit 1
 fi
 

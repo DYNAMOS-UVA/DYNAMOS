@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
+
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 )
 
 // ErrTransferNotFound and ErrTransferInvalidTransition are sentinels.
@@ -70,7 +71,9 @@ func checkTransferOwnership(t *transferRecord, participant string) error {
 	return nil
 }
 
-var transferServiceClient = &http.Client{Timeout: 5 * time.Second}
+// transferServiceClient sends a service token with each call (see
+// internal_auth.go). transfer-process-service refuses calls without one.
+var transferServiceClient = internalServiceClient(func() string { return transferServiceAudience }, api.TransferServiceScope)
 
 // transferServiceErrorCodes maps transfer-process-service's internal-API
 // error codes (go/cmd/transfer-process-service/transfer_handler.go) to this
@@ -78,6 +81,14 @@ var transferServiceClient = &http.Client{Timeout: 5 * time.Second}
 var transferServiceErrorCodes = map[string]error{
 	"transfer-not-found": ErrTransferNotFound,
 	"invalid-transition": ErrTransferInvalidTransition,
+	// transfer-process-service checks the agreement again on create. The
+	// connector checks it first, so these normally come only from a race
+	// or from a mismatch between the two checks.
+	"agreement-not-found":     ErrAgreementNotFound,
+	"agreement-not-finalized": ErrInvalidAgreement,
+	// The same check for a Consumer-role create.
+	"negotiation-not-found":     ErrInvalidAgreement,
+	"negotiation-not-finalized": ErrInvalidAgreement,
 }
 
 // transferServiceStatusFallback: if transfer-process-service's error body

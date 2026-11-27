@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -63,18 +64,7 @@ func deliverToConsumer(n *Negotiation, path string, message any) {
 		// so resending the same token on a retry gets rejected as an
 		// expired/reused JTI even though the request itself is a genuine
 		// retry, not a replay attack.
-		authHeader := ""
-		if stsTokenURL != "" && stsClientID != "" && stsClientSecret != "" {
-			if token, err := fetchSTSToken(n.Participant); err != nil {
-				logger.Sugar().Errorw("failed to fetch STS token for outbound delivery, falling back to partyDAT", "providerPid", n.ProviderPid, "audience", n.Participant, "attempt", attempt, "error", err)
-			} else {
-				authHeader = "Bearer " + token
-			}
-		}
-		if authHeader == "" && partyDAT != "" {
-			authHeader = "Bearer " + partyDAT
-		}
-		if authHeader != "" {
+		if authHeader := ownAuthorization(n.Participant); authHeader != "" {
 			req.Header.Set("Authorization", authHeader)
 		}
 		resp, err := client.Do(req)
@@ -124,7 +114,7 @@ type contractRequestAck struct {
 // before it can persist anything durable, so this is a single attempt, no
 // retry: on failure the internal-API caller can just retry the whole
 // create-as-consumer call, there is nothing partial to clean up first.
-func sendContractRequest(providerEndpoint, participant string, n *Negotiation) (string, error) {
+func sendContractRequest(providerEndpoint string, n *Negotiation) (string, error) {
 	body, err := json.Marshal(map[string]any{
 		"@context":        dspContext,
 		"@type":           "ContractRequestMessage",
@@ -141,7 +131,9 @@ func sendContractRequest(providerEndpoint, participant string, n *Negotiation) (
 		return "", fmt.Errorf("%w: building request: %w", ErrProviderRequestFailed, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", participant)
+	if authHeader := ownAuthorization(n.RemoteParticipant); authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
 
 	client := http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(req)
@@ -163,4 +155,39 @@ func sendContractRequest(providerEndpoint, participant string, n *Negotiation) (
 	}
 
 	return ack.ProviderPid, nil
+}
+
+// ownAuthorization returns the Authorization header value that asserts
+// DYNAMOS's own identity to the remote party audience (its DID): a fresh
+// STS token when STS is configured, else PARTY_DAT, else "" (no header).
+// It is fetched again for each request: a DCP verifier uses each token's
+// "jti" only once.
+//
+// DYNAMOS never forwards a token that a caller sent to it. Before this, a
+// Consumer-role negotiation stored the raw DAT of the initiate caller and
+// sent it on every later message.
+func ownAuthorization(audience string) string {
+	if stsTokenURL != "" && stsClientID != "" && stsClientSecret != "" {
+		token, err := fetchSTSToken(audience)
+		if err == nil {
+			return "Bearer " + token
+		}
+		logger.Sugar().Errorw("failed to fetch STS token, falling back to partyDAT", "audience", audience, "error", err)
+	}
+	if partyDAT != "" {
+		return "Bearer " + partyDAT
+	}
+	return ""
+}
+
+// looksLikeCredential reports whether v is a token, not an identity: an
+// Authorization header value ("Bearer ...") or a JWT (three base64url
+// parts that start with "eyJ"). Such a value must not be stored as a
+// participant.
+func looksLikeCredential(v string) bool {
+	v = strings.TrimSpace(v)
+	if len(v) >= 7 && strings.EqualFold(v[:7], "bearer ") {
+		return true
+	}
+	return strings.HasPrefix(v, "eyJ") && strings.Count(v, ".") == 2
 }

@@ -30,10 +30,19 @@ spec:
           value: {{ .Values.negotiationServiceURL.vu | quote }}
         - name: TRANSFER_SERVICE_URL
           value: {{ .Values.transferServiceURL.vu | quote }}
+        {{- with .Values.consumerInitiators }}
+        - name: CONSUMER_INITIATORS
+          value: {{ . | quote }}
+        {{- end }}
         {{- if .Values.didWebScheme }}
         - name: DID_WEB_SCHEME
           value: {{ .Values.didWebScheme | quote }}
         {{- end }}
+        {{- include "dynamos.authEnv" . | trim | nindent 8 }}
+        volumeMounts:
+        {{- include "dynamos.authVolumeMount" . | nindent 8 }}
+      volumes:
+      {{- include "dynamos.authVolume" . | nindent 6 }}
 
 ---
 

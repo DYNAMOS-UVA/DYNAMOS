@@ -73,13 +73,24 @@ func main() {
 		stsScope = v
 	}
 
+	internalVerifier := mustBuildInternalVerifier()
+
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()
 
 	store = NewStore(etcdClient)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler)
+	handler := newServer(internalVerifier)
+
+	logger.Sugar().Infow("Starting negotiation-service http server", "port", port, "party", party, "consumerAutoNegotiate", consumerAutoNegotiate)
+	if err := http.ListenAndServe(port, handler); err != nil {
+		logger.Sugar().Fatalf("Error starting HTTP server: %v", err)
+	}
+}
+
+// registerInternalRoutes adds the internal API routes to mux. newServer
+// puts all of them behind the internal auth rule.
+func registerInternalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/internal/v1/negotiations", negotiationsCollectionHandler)
 	mux.HandleFunc("GET /internal/v1/negotiations/by-agreement/{agreementId}", negotiationByAgreementHandler)
 	mux.HandleFunc("/internal/v1/negotiations/{id}", negotiationHandler)
@@ -126,9 +137,4 @@ func main() {
 	mux.HandleFunc("/internal/v1/negotiations/consumer/{id}/verify", negotiationConsumerVerifyHandler)
 	mux.HandleFunc("/internal/v1/negotiations/consumer/{id}/counter", negotiationConsumerCounterHandler)
 	mux.HandleFunc("/internal/v1/negotiations/consumer/{id}/terminate", negotiationConsumerTerminateOutboundHandler)
-
-	logger.Sugar().Infow("Starting negotiation-service http server", "port", port, "party", party, "consumerAutoNegotiate", consumerAutoNegotiate)
-	if err := http.ListenAndServe(port, mux); err != nil {
-		logger.Sugar().Fatalf("Error starting HTTP server: %v", err)
-	}
 }

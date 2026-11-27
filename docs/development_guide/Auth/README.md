@@ -46,11 +46,11 @@ This folder describes how DYNAMOS services authenticate their callers and each o
      --data-raw '{...}'
    ```
 
-   Use `$DYNAMOS_OPERATOR_TOKEN` for the orchestrator API.
+   Use `$DYNAMOS_OPERATOR_TOKEN` for the orchestrator API and for the internal API of negotiation-service.
 
 ## Known limits
 
-- The internal APIs of the DSP services (`/internal/v1/...` on transfer-process-service, negotiation-service and catalog-service) do not authenticate their callers yet. A separate issue tracks this work. Do not expose these services outside the cluster.
+- The internal API of catalog-service (`/internal/v1/...`) does not authenticate its callers yet. A separate issue tracks this work. Do not expose this service outside the cluster. The internal APIs of transfer-process-service and negotiation-service need a token (see [Flows](./Flows.md#2-data-request-from-a-dsp-participant)).
 - Bearer tokens are not bound to the sender. A job token stays valid until it expires (5 minutes).
 - There is no token revocation. Use short lifetimes and key rotation.
 - The services read their keys at startup. A key rotation restarts pods.

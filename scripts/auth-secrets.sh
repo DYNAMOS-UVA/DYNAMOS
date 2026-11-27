@@ -7,9 +7,9 @@
 #   scripts/auth-secrets.sh retire NAME    Stop trusting the old key of NAME.
 #   scripts/auth-secrets.sh status         Show the keys and open rotations.
 #
-# NAME is a signing key (orchestrator, transfer-process-service), a dev
-# token (dev-user-token, dev-operator-token) or "rabbitmq" (all RabbitMQ
-# passwords).
+# NAME is a signing key (orchestrator, transfer-process-service,
+# dsp-connector), a dev token (dev-user-token, dev-operator-token) or
+# "rabbitmq" (all RabbitMQ passwords).
 #
 # The script also manages one RabbitMQ user per service, with its own
 # password and broker permissions. See scripts/auth-rabbitmq.sh.
@@ -29,9 +29,13 @@
 #   orchestrator              orchestrator.key.pem          signs job tokens
 #                             dev-operator-token
 #   uva, vu, surf             orchestrator.pub.pem          agents verify job tokens
-#   transfer-process-service  transfer-process-service.key.pem
+#   transfer-process-service  transfer-process-service.key.pem  signs participant tokens
+#                             dsp-connector.pub.pem             verifies internal API callers
+#   negotiation-service       dsp-connector.pub.pem             verifies internal API callers
+#                             dev-operator-token                operator token (Tilt only)
 #   api-gateway               transfer-process-service.pub.pem
 #                             dev-user-token
+#   dsp-connector             dsp-connector.key.pem             signs internal service tokens
 #
 # A *.pub.pem file in a Secret can hold more than one public key. The
 # verifiers accept a token that any of them signed. This is how a rotation
@@ -60,11 +64,17 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 KEYS_DIR="${AUTH_KEYS_DIR:-${REPO_ROOT}/.dev/auth}"
 SECRET="dynamos-auth"
 # The longest token lifetime is 5m (job tokens), plus 30s clock leeway.
+# The internal service tokens of dsp-connector live 1m.
 GRACE="${AUTH_ROTATION_GRACE:-600}"
 ROLLOUT_TIMEOUT="180s"
 
-SIGNING_KEYS=(orchestrator transfer-process-service)
+SIGNING_KEYS=(orchestrator transfer-process-service dsp-connector)
 DEV_TOKENS=(dev-user-token dev-operator-token)
+NEGOTIATION_SERVICES=(
+    negotiation-service/negotiation-service-uva
+    negotiation-service/negotiation-service-vu
+    negotiation-service/negotiation-service-surf
+)
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -89,6 +99,10 @@ issuers_of() {
             echo "transfer-process-service/transfer-process-service-uva" \
                  "transfer-process-service/transfer-process-service-vu" \
                  "transfer-process-service/transfer-process-service-surf" ;;
+        dsp-connector)
+            echo "dsp-connector/dsp-connector-uva" \
+                 "dsp-connector/dsp-connector-vu" \
+                 "dsp-connector/dsp-connector-surf" ;;
     esac
 }
 
@@ -96,8 +110,13 @@ verifiers_of() {
     case "$1" in
         orchestrator) echo "uva/uva vu/vu surf/surf" ;;
         transfer-process-service) echo "api-gateway/api-gateway" ;;
+        dsp-connector)
+            echo "transfer-process-service/transfer-process-service-uva" \
+                 "transfer-process-service/transfer-process-service-vu" \
+                 "transfer-process-service/transfer-process-service-surf" \
+                 "${NEGOTIATION_SERVICES[@]}" ;;
         dev-user-token) echo "api-gateway/api-gateway" ;;
-        dev-operator-token) echo "orchestrator/orchestrator" ;;
+        dev-operator-token) echo "orchestrator/orchestrator" "${NEGOTIATION_SERVICES[@]}" ;;
     esac
 }
 
@@ -191,7 +210,13 @@ apply_all() {
         apply_secret "${ns}" "orchestrator.pub.pem=${STAGE}/orchestrator.pub.pem"
     done
     apply_secret transfer-process-service \
-        "transfer-process-service.key.pem=$(f transfer-process-service.key.pem)"
+        "transfer-process-service.key.pem=$(f transfer-process-service.key.pem)" \
+        "dsp-connector.pub.pem=${STAGE}/dsp-connector.pub.pem"
+    apply_secret dsp-connector \
+        "dsp-connector.key.pem=$(f dsp-connector.key.pem)"
+    apply_secret negotiation-service \
+        "dsp-connector.pub.pem=${STAGE}/dsp-connector.pub.pem" \
+        "dev-operator-token=$(f dev-operator-token)"
     apply_secret api-gateway \
         "transfer-process-service.pub.pem=${STAGE}/transfer-process-service.pub.pem" \
         "dev-user-token=$(f dev-user-token)"

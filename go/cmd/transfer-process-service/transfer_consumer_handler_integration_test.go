@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/dsp"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -60,11 +61,18 @@ func decodeTransferInternalError(t *testing.T, rec *httptest.ResponseRecorder) i
 // (providerPid) for sendTransferRequest to adopt the transfer, real HTTP
 // round-trip included (not a mock of sendTransferRequest itself). Mirrors
 // negotiation-service's fakeProvider.
+//
+// It also sets PARTY_DAT for the test and checks that the request carries
+// DYNAMOS's own credential, not the participant identity or a caller's
+// token.
 func fakeTransferProvider(t *testing.T, providerPid string) *httptest.Server {
 	t.Helper()
+	oldDAT := partyDAT
+	partyDAT = "test-party-dat"
+	t.Cleanup(func() { partyDAT = oldDAT })
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/transfers/request", r.URL.Path)
-		assert.Equal(t, "urn:dynamos:party:VU", r.Header.Get("Authorization"))
+		assert.Equal(t, "Bearer test-party-dat", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{
@@ -77,14 +85,42 @@ func fakeTransferProvider(t *testing.T, providerPid string) *httptest.Server {
 	}))
 }
 
+// itConsumerNegotiationId names the FINALIZED Consumer-role negotiation
+// that the consumer create tests run under.
+const itConsumerNegotiationId = "urn:dynamos:negotiation:consumer:VU:it-1"
+
+// stubConsumerNegotiation stores a FINALIZED Consumer-role negotiation of
+// steward VU whose remote Provider is at providerEndpoint. extra adds more
+// keys (for example a Provider-role agreement).
+func stubConsumerNegotiation(t *testing.T, providerEndpoint string, extra map[string]string) {
+	t.Helper()
+	values := map[string]string{
+		dsp.ConsumerNegotiationKey(itConsumerNegotiationId): negotiationJSON(t, dsp.NegotiationRecord{
+			Kind: dsp.NegotiationKindConsumer, ProviderPid: "urn:example:agreement:1", ConsumerPid: itConsumerNegotiationId,
+			Party: "VU", Participant: "urn:dynamos:party:VU", State: dsp.NegotiationFinalized,
+			RemoteParticipant: "urn:dynamos:party:UVA", ProviderEndpoint: providerEndpoint,
+		}),
+	}
+	for k, v := range extra {
+		values[k] = v
+	}
+	stubEtcd(t, values)
+}
+
+// consumerCreateBody is a valid create-as-consumer body. It also carries a
+// providerEndpoint that the handler must ignore: the endpoint comes from
+// the stored negotiation.
+const consumerCreateBody = `{"negotiationId":"` + itConsumerNegotiationId + `","providerEndpoint":"http://must-not-be-used.invalid","participant":"urn:dynamos:party:VU","format":"dynamos:computeToData","callbackAddress":"https://vu.example.com/api/v1/callback"}`
+
 func TestTransfersConsumerCollectionHandler_Create(t *testing.T) {
 	wireTransferHandlerTestStore(t)
 
 	provider := fakeTransferProvider(t, "urn:example:transfer:provider:1")
 	defer provider.Close()
+	stubConsumerNegotiation(t, provider.URL, nil)
 
 	rec := doTransferRequest(transfersConsumerCollectionHandler, http.MethodPost, "/internal/v1/transfers/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"urn:dynamos:party:VU","remoteParticipant":"urn:dynamos:party:UVA","agreementId":"urn:example:agreement:1","format":"dynamos:computeToData","callbackAddress":"https://vu.example.com/api/v1/callback"}`)
+		consumerCreateBody)
 
 	require.Equal(t, http.StatusCreated, rec.Code)
 	tp := decodeTransfer(t, rec)
@@ -92,30 +128,19 @@ func TestTransfersConsumerCollectionHandler_Create(t *testing.T) {
 	assert.Equal(t, StateRequested, tp.State)
 	assert.Equal(t, "urn:example:transfer:provider:1", tp.ProviderPid)
 	assert.Equal(t, "urn:dynamos:party:UVA", tp.RemoteParticipant)
+	assert.Equal(t, provider.URL, tp.ProviderEndpoint)
+	assert.Equal(t, "urn:example:agreement:1", tp.AgreementId)
 	assert.Contains(t, tp.ConsumerPid, "urn:dynamos:transfer:consumer:VU:")
 }
 
-func TestTransfersConsumerCollectionHandler_MissingProviderEndpoint(t *testing.T) {
+func TestTransfersConsumerCollectionHandler_MissingNegotiationId(t *testing.T) {
 	wireTransferHandlerTestStore(t)
 
 	rec := doTransferRequest(transfersConsumerCollectionHandler, http.MethodPost, "/internal/v1/transfers/consumer", "",
-		`{"participant":"urn:dynamos:party:VU","remoteParticipant":"urn:dynamos:party:UVA","agreementId":"urn:example:agreement:1","format":"dynamos:computeToData","callbackAddress":"https://vu.example.com/api/v1/callback"}`)
+		`{"participant":"urn:dynamos:party:VU","format":"dynamos:computeToData","callbackAddress":"https://vu.example.com/api/v1/callback"}`)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "missing-provider-endpoint", decodeTransferInternalError(t, rec).Code)
-}
-
-func TestTransfersConsumerCollectionHandler_MissingAgreementId(t *testing.T) {
-	wireTransferHandlerTestStore(t)
-
-	provider := fakeTransferProvider(t, "urn:example:transfer:provider:missing-agreement")
-	defer provider.Close()
-
-	rec := doTransferRequest(transfersConsumerCollectionHandler, http.MethodPost, "/internal/v1/transfers/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"urn:dynamos:party:VU","remoteParticipant":"urn:dynamos:party:UVA","format":"dynamos:computeToData","callbackAddress":"https://vu.example.com/api/v1/callback"}`)
-
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.Equal(t, "missing-agreement-id", decodeTransferInternalError(t, rec).Code)
+	assert.Equal(t, "missing-negotiation-id", decodeTransferInternalError(t, rec).Code)
 }
 
 // TestTransfersConsumerCollectionHandler_ProviderRejects confirms a
@@ -129,9 +154,10 @@ func TestTransfersConsumerCollectionHandler_ProviderRejects(t *testing.T) {
 		w.WriteHeader(http.StatusBadRequest)
 	}))
 	defer provider.Close()
+	stubConsumerNegotiation(t, provider.URL, nil)
 
 	rec := doTransferRequest(transfersConsumerCollectionHandler, http.MethodPost, "/internal/v1/transfers/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"urn:dynamos:party:VU","remoteParticipant":"urn:dynamos:party:UVA","agreementId":"urn:example:agreement:1","format":"dynamos:computeToData","callbackAddress":"https://vu.example.com/api/v1/callback"}`)
+		consumerCreateBody)
 
 	assert.Equal(t, http.StatusBadGateway, rec.Code)
 	assert.Equal(t, "provider-request-failed", decodeTransferInternalError(t, rec).Code)
@@ -148,9 +174,10 @@ func TestTransferConsumerLifecycle_FullPath(t *testing.T) {
 
 	provider := fakeTransferProvider(t, "urn:example:transfer:provider:lifecycle")
 	defer provider.Close()
+	stubConsumerNegotiation(t, provider.URL, nil)
 
 	createRec := doTransferRequest(transfersConsumerCollectionHandler, http.MethodPost, "/internal/v1/transfers/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"urn:dynamos:party:VU","remoteParticipant":"urn:dynamos:party:UVA","agreementId":"urn:example:agreement:1","format":"dynamos:computeToData","callbackAddress":"https://vu.example.com/api/v1/callback"}`)
+		consumerCreateBody)
 	require.Equal(t, http.StatusCreated, createRec.Code)
 	id := decodeTransfer(t, createRec).ConsumerPid
 
@@ -179,6 +206,11 @@ func TestTransferConsumerAndProvider_DoNotCollide(t *testing.T) {
 
 	provider := fakeTransferProvider(t, "urn:example:transfer:provider:no-collide")
 	defer provider.Close()
+	stubConsumerNegotiation(t, provider.URL, map[string]string{
+		dsp.ProviderNegotiationKey("urn:example:agreement:1"): negotiationJSON(t, dsp.NegotiationRecord{
+			Kind: dsp.NegotiationKindProvider, ProviderPid: "urn:example:agreement:1", Party: "VU", Participant: "consumer@example.com", State: dsp.NegotiationFinalized,
+		}),
+	})
 
 	providerRoleRec := doTransferRequest(transfersCollectionHandler, http.MethodPost, "/internal/v1/transfers", "",
 		`{"consumerPid":"urn:example:consumer:no-collide","participant":"consumer@example.com","agreementId":"urn:example:agreement:1","format":"dynamos:computeToData","callbackAddress":"https://consumer.example.com/callback"}`)
@@ -186,7 +218,7 @@ func TestTransferConsumerAndProvider_DoNotCollide(t *testing.T) {
 	providerRoleId := decodeTransfer(t, providerRoleRec).ProviderPid
 
 	consumerRoleRec := doTransferRequest(transfersConsumerCollectionHandler, http.MethodPost, "/internal/v1/transfers/consumer", "",
-		`{"providerEndpoint":"`+provider.URL+`","participant":"urn:dynamos:party:VU","remoteParticipant":"urn:dynamos:party:UVA","agreementId":"urn:example:agreement:1","format":"dynamos:computeToData","callbackAddress":"https://vu.example.com/api/v1/callback"}`)
+		consumerCreateBody)
 	require.Equal(t, http.StatusCreated, consumerRoleRec.Code)
 	consumerRoleId := decodeTransfer(t, consumerRoleRec).ConsumerPid
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -66,18 +67,7 @@ func deliverToConsumer(t *TransferProcess, path string, message any) {
 		// Fetched fresh per attempt - see negotiation-service's own
 		// deliverToConsumer for why (a real DCP verifier single-uses each
 		// token's "jti").
-		authHeader := ""
-		if stsTokenURL != "" && stsClientID != "" && stsClientSecret != "" {
-			if token, err := fetchSTSToken(t.Participant); err != nil {
-				logger.Sugar().Errorw("failed to fetch STS token for outbound delivery, falling back to partyDAT", "providerPid", t.ProviderPid, "audience", t.Participant, "attempt", attempt, "error", err)
-			} else {
-				authHeader = "Bearer " + token
-			}
-		}
-		if authHeader == "" && partyDAT != "" {
-			authHeader = "Bearer " + partyDAT
-		}
-		if authHeader != "" {
+		if authHeader := ownAuthorization(t.Participant); authHeader != "" {
 			req.Header.Set("Authorization", authHeader)
 		}
 		resp, err := client.Do(req)
@@ -127,7 +117,7 @@ type transferRequestAck struct {
 // retry: on failure the internal-API caller can just retry the whole
 // create-as-consumer call, there is nothing partial to clean up first.
 // Mirrors negotiation-service's sendContractRequest.
-func sendTransferRequest(providerEndpoint, participant string, t *TransferProcess) (string, error) {
+func sendTransferRequest(providerEndpoint string, t *TransferProcess) (string, error) {
 	msg := map[string]any{
 		"@context":        dspContext,
 		"@type":           "TransferRequestMessage",
@@ -161,7 +151,9 @@ func sendTransferRequest(providerEndpoint, participant string, t *TransferProces
 		return "", fmt.Errorf("%w: building request: %w", ErrProviderRequestFailed, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", participant)
+	if authHeader := ownAuthorization(t.RemoteParticipant); authHeader != "" {
+		req.Header.Set("Authorization", authHeader)
+	}
 
 	client := http.Client{Timeout: 20 * time.Second}
 	resp, err := client.Do(req)
@@ -183,4 +175,34 @@ func sendTransferRequest(providerEndpoint, participant string, t *TransferProces
 	}
 
 	return ack.ProviderPid, nil
+}
+
+// ownAuthorization returns the Authorization header value that asserts
+// DYNAMOS's own identity to the remote party audience (its DID): a fresh
+// STS token when STS is configured, else PARTY_DAT, else "" (no header).
+// Same rule as negotiation-service's ownAuthorization. DYNAMOS never
+// forwards a token that a caller sent to it.
+func ownAuthorization(audience string) string {
+	if stsTokenURL != "" && stsClientID != "" && stsClientSecret != "" {
+		token, err := fetchSTSToken(audience)
+		if err == nil {
+			return "Bearer " + token
+		}
+		logger.Sugar().Errorw("failed to fetch STS token, falling back to partyDAT", "audience", audience, "error", err)
+	}
+	if partyDAT != "" {
+		return "Bearer " + partyDAT
+	}
+	return ""
+}
+
+// looksLikeCredential reports whether v is a token, not an identity: an
+// Authorization header value ("Bearer ...") or a JWT. Such a value must
+// not be stored as a participant.
+func looksLikeCredential(v string) bool {
+	v = strings.TrimSpace(v)
+	if len(v) >= 7 && strings.EqualFold(v[:7], "bearer ") {
+		return true
+	}
+	return strings.HasPrefix(v, "eyJ") && strings.Count(v, ".") == 2
 }

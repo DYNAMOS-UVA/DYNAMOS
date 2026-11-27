@@ -33,15 +33,21 @@ func transferConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Unlike negotiationConsumerInitiateHandler, this caller's identity is
-	// never reused as the remote Provider's identity - there is no
-	// TCK-style single-shared-Authorization convention for a real
-	// two-DYNAMOS-instances transfer. This check only gates who may
-	// trigger the call locally. The remote Provider's identity and DSP
-	// base URL are already known: captured on the FINALIZED negotiation
-	// itself when the #80-#87 flow created it.
-	if _, ok := participantFromRequest(r); !ok {
+	// The remote Provider's identity and DSP base URL are already known:
+	// captured on the FINALIZED negotiation itself when the #80-#87 flow
+	// created it. The caller must be the identity that started that
+	// negotiation: negotiationConsumerInitiateHandler stores its verified
+	// caller as RemoteParticipant (the single-shared-Authorization
+	// convention). Any other participant must not be able to start a
+	// transfer under it.
+	caller, ok := participantFromRequest(r)
+	if !ok {
 		writeTransferError(w, http.StatusUnauthorized, "", "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
+		return
+	}
+	if !mayInitiate(caller) {
+		logger.Sugar().Infow("Transfer initiate denied: participant is not in CONSUMER_INITIATORS", "participant", caller)
+		writeTransferError(w, http.StatusForbidden, "", "", "forbidden", "This participant may not start transfers at this connector.")
 		return
 	}
 
@@ -69,6 +75,13 @@ func transferConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) {
 		writeTransferError(w, http.StatusBadGateway, "", "", "upstream-error", "Failed to look up negotiation.")
 		return
 	}
+	if err := checkConsumerNegotiationOwnership(n, caller); err != nil {
+		// Same answer as an unknown negotiation, so a caller cannot find
+		// out which negotiationIds exist.
+		logger.Sugar().Infow("Transfer initiate denied: caller does not own the negotiation", "negotiationId", body.NegotiationId, "participant", caller)
+		writeTransferError(w, http.StatusBadRequest, "", "", "invalid-negotiation", "negotiationId does not name a known Consumer-role negotiation")
+		return
+	}
 	if n.State != "FINALIZED" {
 		writeTransferError(w, http.StatusBadRequest, "", "", "invalid-negotiation", "negotiation "+body.NegotiationId+" is "+n.State+", not FINALIZED")
 		return
@@ -92,19 +105,16 @@ func transferConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ownParticipant reuses the raw Authorization header this request
-	// itself carried, same as negotiationConsumerInitiateHandler's own
-	// fix (issue #93 live demo finding) - a real remote Provider
-	// DAT-verifies its inbound Authorization header, so a synthesized
-	// "urn:dynamos:party:X" label can never pass that check. n.ProviderPid
-	// (the agreementId below) was validated on the remote Provider's
-	// negotiation-service against n.Participant, which is this same real
-	// DID - the outbound transfer request has to assert the identical
-	// identity or validateAgreementId's ownership check fails there too.
-	ownParticipant := r.Header.Get("Authorization")
+	// ownParticipant is DYNAMOS's own identity on this transfer: the
+	// verified DID of the caller (one of CONSUMER_INITIATORS, and the owner
+	// of the negotiation). It is an identity, never the caller's token.
+	// transfer-process-service sends its own credential (PARTY_DAT or STS)
+	// on the outbound Transfer Request Message, so the remote Provider sees
+	// the same identity that negotiated the agreement.
+	ownParticipant := caller
 	callbackAddress := connectorBaseURL + apiVersion + "/callback"
 
-	t, err := createConsumerTransfer(n.ProviderEndpoint, ownParticipant, n.RemoteParticipant, n.ProviderPid, body.Format, callbackAddress, body.DataAddress)
+	t, err := createConsumerTransfer(body.NegotiationId, ownParticipant, body.Format, callbackAddress, body.DataAddress)
 	if err != nil {
 		mapTransferServiceError(w, "", "", err)
 		return

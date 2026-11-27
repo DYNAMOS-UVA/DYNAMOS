@@ -9,24 +9,19 @@ import (
 
 // transferConsumerRequestBody is create-as-consumer's request body -
 // DYNAMOS itself initiating a Transfer Request Message to a remote
-// Provider. Mirrors negotiation-service's negotiationConsumerRequestBody.
+// Provider. The remote Provider (endpoint and identity) and the
+// agreementId come from the stored negotiation that NegotiationId names,
+// not from this body: this service sends an outbound request to that
+// endpoint, so it does not take the endpoint from its caller.
 type transferConsumerRequestBody struct {
-	// ProviderEndpoint is the remote dsp-connector's DSP base URL - the
-	// outbound Transfer Request Message goes to
-	// ProviderEndpoint+"/transfers/request".
-	ProviderEndpoint string `json:"providerEndpoint"`
-	// Participant is DYNAMOS's own identity, sent as the Authorization
-	// header on the outbound message (see TransferProcess.Participant's
-	// doc).
-	Participant string `json:"participant"`
-	// RemoteParticipant is the remote Provider's identity - see
-	// TransferProcess.RemoteParticipant.
-	RemoteParticipant string `json:"remoteParticipant"`
-	// AgreementId names the FINALIZED negotiation this transfer runs
-	// under. Per dsp-connector's own validateAgreementId convention,
-	// this is that negotiation's own providerPid, as the remote Provider
-	// knows it.
-	AgreementId     string          `json:"agreementId"`
+	// NegotiationId is the consumerPid of the FINALIZED Consumer-role
+	// negotiation this transfer runs under.
+	NegotiationId string `json:"negotiationId"`
+	// Participant is DYNAMOS's own identity: the DID that dsp-connector
+	// verified on the initiate request. It is stored, so it must never be a
+	// token: the outbound message carries DYNAMOS's own credential (see
+	// ownAuthorization).
+	Participant     string          `json:"participant"`
 	Format          string          `json:"format"`
 	CallbackAddress string          `json:"callbackAddress"`
 	DataAddress     json.RawMessage `json:"dataAddress,omitempty"`
@@ -53,20 +48,16 @@ func transfersConsumerCollectionHandler(w http.ResponseWriter, r *http.Request) 
 		writeInternalError(w, http.StatusBadRequest, "invalid-body", "request body must be valid JSON")
 		return
 	}
-	if body.ProviderEndpoint == "" {
-		writeInternalError(w, http.StatusBadRequest, "missing-provider-endpoint", "providerEndpoint is required")
+	if body.NegotiationId == "" {
+		writeInternalError(w, http.StatusBadRequest, "missing-negotiation-id", "negotiationId is required")
 		return
 	}
 	if body.Participant == "" {
 		writeInternalError(w, http.StatusBadRequest, "missing-participant", "participant is required")
 		return
 	}
-	if body.RemoteParticipant == "" {
-		writeInternalError(w, http.StatusBadRequest, "missing-remote-participant", "remoteParticipant is required")
-		return
-	}
-	if body.AgreementId == "" {
-		writeInternalError(w, http.StatusBadRequest, "missing-agreement-id", "agreementId is required")
+	if looksLikeCredential(body.Participant) {
+		writeInternalError(w, http.StatusBadRequest, "invalid-participant", "participant must be an identity, not a token")
 		return
 	}
 	if body.Format == "" {
@@ -78,11 +69,30 @@ func transfersConsumerCollectionHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	t := newConsumerTransferProcess(party, body.Participant, body.RemoteParticipant, body.ProviderEndpoint, body.AgreementId, body.Format, body.CallbackAddress, body.DataAddress)
-
-	providerPid, err := sendTransferRequest(body.ProviderEndpoint, body.Participant, t)
+	n, err := consumerNegotiation(body.NegotiationId)
 	if err != nil {
-		logger.Sugar().Errorw("outbound Transfer Request Message failed", "consumerPid", t.ConsumerPid, "providerEndpoint", body.ProviderEndpoint, "error", err)
+		switch {
+		case errors.Is(err, ErrAgreementNotFound):
+			logger.Sugar().Infow("consumer transfer request refused", "negotiationId", body.NegotiationId, "reason", err.Error())
+			writeInternalError(w, http.StatusNotFound, "negotiation-not-found", "negotiationId does not name a usable Consumer-role negotiation")
+		case errors.Is(err, ErrAgreementNotFinalized):
+			logger.Sugar().Infow("consumer transfer request refused", "negotiationId", body.NegotiationId, "reason", err.Error())
+			writeInternalError(w, http.StatusConflict, "negotiation-not-finalized", "the negotiation is not FINALIZED")
+		default:
+			logger.Sugar().Errorw("failed to read consumer negotiation", "negotiationId", body.NegotiationId, "error", err)
+			writeInternalError(w, http.StatusInternalServerError, "internal-error", "failed to read negotiation")
+		}
+		return
+	}
+
+	// agreementId is the remote Provider's providerPid for the negotiation,
+	// the convention dsp-connector's validateAgreementId checks on the
+	// Provider side.
+	t := newConsumerTransferProcess(party, body.Participant, n.RemoteParticipant, n.ProviderEndpoint, n.ProviderPid, body.Format, body.CallbackAddress, body.DataAddress)
+
+	providerPid, err := sendTransferRequest(n.ProviderEndpoint, t)
+	if err != nil {
+		logger.Sugar().Errorw("outbound Transfer Request Message failed", "consumerPid", t.ConsumerPid, "providerEndpoint", n.ProviderEndpoint, "error", err)
 		writeInternalError(w, http.StatusBadGateway, "provider-request-failed", err.Error())
 		return
 	}

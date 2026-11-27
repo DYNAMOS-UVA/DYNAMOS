@@ -17,11 +17,18 @@ import (
 // POST /negotiations/request endpoint - just enough of the DSP ack shape
 // (providerPid) for sendContractRequest to adopt the negotiation, real HTTP
 // round-trip included (not a mock of sendContractRequest itself).
+//
+// It also sets PARTY_DAT for the test and checks that the request carries
+// DYNAMOS's own credential, not the participant identity or a caller's
+// token.
 func fakeProvider(t *testing.T, providerPid string) *httptest.Server {
 	t.Helper()
+	oldDAT := partyDAT
+	partyDAT = "test-party-dat"
+	t.Cleanup(func() { partyDAT = oldDAT })
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/negotiations/request", r.URL.Path)
-		assert.Equal(t, "did:web:vu.example.com", r.Header.Get("Authorization"))
+		assert.Equal(t, "Bearer test-party-dat", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{

@@ -32,6 +32,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -281,7 +282,7 @@ func urlEncode(id string) string {
 
 func post(path string, body map[string]any) {
 	raw, _ := json.Marshal(body)
-	resp, err := http.Post(negotiationServiceURL+"/internal/v1/negotiations/"+path, "application/json", bytes.NewReader(raw))
+	resp, err := postWithToken(negotiationServiceURL+"/internal/v1/negotiations/"+path, raw)
 	if err != nil {
 		log.Printf("POST %s failed: %v", path, err)
 		return
@@ -290,4 +291,20 @@ func post(path string, body map[string]any) {
 	if resp.StatusCode >= 300 {
 		log.Printf("POST %s -> %s", path, resp.Status)
 	}
+}
+
+// postWithToken POSTs raw JSON to the negotiation-service internal API. The
+// API needs a bearer token with the scope negotiation-service:internal.
+// The harness plays the operator, so it sends the token from
+// NEGOTIATION_SERVICE_TOKEN (the CI workflow mints it).
+func postWithToken(url string, raw []byte) (*http.Response, error) {
+	req, err := http.NewRequest(http.MethodPost, url, bytes.NewReader(raw))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if tok := os.Getenv("NEGOTIATION_SERVICE_TOKEN"); tok != "" {
+		req.Header.Set("Authorization", "Bearer "+tok)
+	}
+	return http.DefaultClient.Do(req)
 }

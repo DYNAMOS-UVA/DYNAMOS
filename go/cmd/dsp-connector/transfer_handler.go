@@ -135,6 +135,12 @@ func mapTransferServiceError(w http.ResponseWriter, providerPid, consumerPid str
 		writeTransferError(w, http.StatusNotFound, providerPid, consumerPid, "not-found", "Transfer process not found.")
 		return
 	}
+	if errors.Is(err, ErrAgreementNotFound) || errors.Is(err, ErrInvalidAgreement) {
+		// Same answer as validateAgreementId gives for the same problem.
+		logger.Sugar().Infow("Transfer request denied by transfer-process-service: invalid agreement", "consumerPid", consumerPid, "error", err)
+		writeTransferError(w, http.StatusBadRequest, providerPid, consumerPid, "invalid-agreement", err.Error())
+		return
+	}
 	if errors.Is(err, ErrTransferInvalidTransition) {
 		logger.Sugar().Infow("Transfer state transition rejected", "providerPid", providerPid, "error", err)
 		writeTransferError(w, http.StatusBadRequest, providerPid, consumerPid, "invalid-transition", "This message is not valid for the transfer's current state.")

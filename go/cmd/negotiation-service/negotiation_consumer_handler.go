@@ -15,8 +15,9 @@ type negotiationConsumerRequestBody struct {
 	// outbound Contract Request Message goes to
 	// ProviderEndpoint+"/negotiations/request".
 	ProviderEndpoint string `json:"providerEndpoint"`
-	// Participant is DYNAMOS's own identity, sent as the Authorization
-	// header on the outbound message (see Negotiation.Participant's doc).
+	// Participant is DYNAMOS's own identity (a DID that dsp-connector
+	// verified). It is stored, so it must never be a token: the outbound
+	// messages carry DYNAMOS's own credential (see ownAuthorization).
 	Participant string `json:"participant"`
 	// RemoteParticipant is the remote Provider's identity - see
 	// Negotiation.RemoteParticipant. Required: the caller already has to
@@ -55,6 +56,10 @@ func negotiationsConsumerCollectionHandler(w http.ResponseWriter, r *http.Reques
 		writeInternalError(w, http.StatusBadRequest, "missing-participant", "participant is required")
 		return
 	}
+	if looksLikeCredential(body.Participant) {
+		writeInternalError(w, http.StatusBadRequest, "invalid-participant", "participant must be an identity, not a token")
+		return
+	}
 	if body.RemoteParticipant == "" {
 		writeInternalError(w, http.StatusBadRequest, "missing-remote-participant", "remoteParticipant is required")
 		return
@@ -70,7 +75,7 @@ func negotiationsConsumerCollectionHandler(w http.ResponseWriter, r *http.Reques
 
 	n := newConsumerNegotiation(party, body.Participant, body.RemoteParticipant, body.ProviderEndpoint, body.CallbackAddress, body.Offer)
 
-	providerPid, err := sendContractRequest(body.ProviderEndpoint, body.Participant, n)
+	providerPid, err := sendContractRequest(body.ProviderEndpoint, n)
 	if err != nil {
 		logger.Sugar().Errorw("outbound Contract Request Message failed", "consumerPid", n.ConsumerPid, "providerEndpoint", body.ProviderEndpoint, "error", err)
 		writeInternalError(w, http.StatusBadGateway, "provider-request-failed", err.Error())
