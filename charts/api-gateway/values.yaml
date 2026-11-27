@@ -4,3 +4,31 @@ tracingEndpoint: collector.linkerd-jaeger:55678
 branchNameTag: "main"
 dockerArtifactAccount: "dynamos1"
 
+
+# Authentication (see templates/_auth.tpl and scripts/auth-secrets.sh).
+auth:
+  secretName: dynamos-auth
+  env:
+    # Callers of the public API. The gateway takes the user from the token,
+    # so the token subject must be the user name in the etcd agreements.
+    # transfer-process-service sends its own tokens for DSP participants.
+    # Add your IdP for end users, for example:
+    #   AUTH_PROVIDERS: oidc,jwt
+    #   AUTH_OIDC_ISSUER: https://login.microsoftonline.com/<tenant>/v2.0
+    #   AUTH_OIDC_AUDIENCE: api://dynamos
+    #   AUTH_OIDC_SUBJECT_CLAIM: preferred_username
+    AUTH_PROVIDERS: jwt
+    AUTH_JWT_ISSUER: dynamos-transfer-process-service
+    AUTH_JWT_AUDIENCE: api-gateway
+    AUTH_JWT_PUBLIC_KEY_FILES: /etc/dynamos/auth/transfer-process-service.pub.pem
+  # Development only (Tilt sets enabled=true). The subject is the user in
+  # configuration/etcd_launch_files/agreements.json.
+  devToken:
+    enabled: false
+    secretKey: dev-user-token
+    subject: jorrit.stutterheim@cloudnation.nl
+    kind: user
+    scopes: ""
+
+# Browser origins allowed to call the API, comma-separated. Empty: no CORS.
+corsAllowedOrigins: ""

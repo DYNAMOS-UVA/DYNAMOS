@@ -152,11 +152,11 @@ func getArchetypeBasedOnOptions(validationResponse *pb.ValidationResponse, autho
 					return "dataThroughTtp"
 				}
 			} else if len(authorizedDataProviders) > 1 { // aggregate is false here as the previous condition (is true) is not met
-			// If aggregate is not enabled and multiple data providers are used, enforce the 'computeToData' archetype
-			// This is because without the aggregate option, the 'dataThroughTtp' would only use the data of one data provider, which 
-			// does not make sense. Also, this is the counterpart of the above option that enables the 'dataThroughTtp' archetype when aggregate is true.
-				
-				// Check if all authorized data providers allow the archetype				
+				// If aggregate is not enabled and multiple data providers are used, enforce the 'computeToData' archetype
+				// This is because without the aggregate option, the 'dataThroughTtp' would only use the data of one data provider, which
+				// does not make sense. Also, this is the counterpart of the above option that enables the 'dataThroughTtp' archetype when aggregate is true.
+
+				// Check if all authorized data providers allow the archetype
 				allowed := true
 				for provider := range authorizedDataProviders {
 					if !slices.Contains(validationResponse.ValidArchetypes.Archetypes[provider].Archetypes, "computeToData") {

@@ -28,7 +28,7 @@ func sqlDataRequestHandler() http.HandlerFunc {
 		ctxWithTimeout, cancel := context.WithTimeout(r.Context(), 120*time.Second)
 		defer cancel()
 
-		// Get the sql data request 
+		// Get the sql data request
 		sqlDataRequest := &pb.SqlDataRequest{}
 		sqlDataRequest.RequestMetadata = &pb.RequestMetadata{}
 
@@ -58,6 +58,12 @@ func sqlDataRequestHandler() http.HandlerFunc {
 
 		if sqlDataRequest.RequestMetadata.JobId == "" {
 			http.Error(w, "Job ID not passed", http.StatusInternalServerError)
+			return
+		}
+
+		// Bind the verified token to this job and user before any lookup.
+		if err := authorizeJob(r.Context(), sqlDataRequest.GetUser().GetUserName(), sqlDataRequest.RequestMetadata.JobId); err != nil {
+			logAuthFailure(w, r, err)
 			return
 		}
 

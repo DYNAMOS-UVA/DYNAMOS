@@ -12,7 +12,6 @@ import (
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	socketio "github.com/googollee/go-socket.io"
-	"github.com/gorilla/handlers"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.opencensus.io/plugin/ochttp"
 	"google.golang.org/grpc"
@@ -53,6 +52,9 @@ func main() {
 		logger.Sugar().Fatalf("Failed to create ocagent-exporter: %v", err)
 	}
 
+	// Fail at startup: without a verifier every request is rejected.
+	callerVerifier := mustBuildCallerVerifier()
+
 	conn = lib.GetGrpcConnection(grpcAddr)
 	defer conn.Close()
 	c = lib.InitializeSidecarMessaging(conn, &pb.InitRequest{ServiceName: fmt.Sprintf("%s-in", serviceName), RoutingKey: fmt.Sprintf("%s-in", serviceName), QueueAutoDelete: false})
@@ -66,9 +68,10 @@ func main() {
 		wg.Done() // Decrement the WaitGroup counter when the goroutine finishes
 	}()
 
-	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
-	originsOk := handlers.AllowedOrigins([]string{"*"})
-	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
+	corsOrigins, err := api.CORSOriginsFromEnv()
+	if err != nil {
+		logger.Sugar().Fatalf("Invalid CORS configuration: %v", err)
+	}
 
 	mux := http.NewServeMux()
 
@@ -100,11 +103,13 @@ func main() {
 	apiMux.Handle("/socket.io/", server)
 	logger.Info(apiVersion) // prints /api/v1
 
-	mux.Handle(apiVersion+"/", http.StripPrefix(apiVersion, apiMux))
+	// Every public API route needs an authenticated caller. CORS stays
+	// outside this, so browser preflight requests still work.
+	mux.Handle(apiVersion+"/", http.StripPrefix(apiVersion, callerAuth(callerVerifier)(apiMux)))
 
 	logger.Sugar().Infow("Starting http server on: ", "port", port)
 	go func() {
-		if err := http.ListenAndServe(port, api.LogMiddleware(handlers.CORS(originsOk, headersOk, methodsOk)(mux))); err != nil {
+		if err := http.ListenAndServe(port, api.LogMiddleware(api.CORS(corsOrigins)(mux))); err != nil {
 			logger.Sugar().Fatalw("Error starting HTTP server: %s", err)
 		}
 	}()

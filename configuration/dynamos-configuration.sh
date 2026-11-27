@@ -78,27 +78,17 @@ fi
 kubectl config use-context kind-dynamos >/dev/null
 
 # ---------------------------------------------------------------------------
-# RabbitMQ password
+# RabbitMQ definitions
 # ---------------------------------------------------------------------------
+# The definitions have the exchanges and queues, but no users.
+# scripts/auth-secrets.sh (below, after the core install) creates one
+# RabbitMQ user per service and removes the old shared users.
 cp "$example_definitions_file" "$rabbit_definitions_file"
 echo "definitions_example.json copied over definitions.json to ensure a clean file"
 
-echo "Generating RabbitMQ password..."
+# The namespaces chart still makes the old "rabbit" Secret. No service
+# uses it; it gets a random value.
 rabbit_pw=$(openssl rand -hex 16)
-
-# Use the RabbitCtl to make a special hash of that password:
-hashed_pw=$($SUDO docker run --rm rabbitmq:3-management rabbitmqctl hash_password $rabbit_pw)
-actual_hash=$(echo "$hashed_pw" | cut -d $'\n' -f2)
-
-echo "Replacing tokens..."
-cp ${k8s_service_files}/definitions_example.json ${rabbit_definitions_file}
-
-# The Rabbit Hashed password needs to be in definitions.json file, that is the configuration for RabbitMQ
-if [[ "$OSTYPE" == "darwin"* ]]; then
-    sed -i '' "s|%PASSWORD%|${actual_hash}|g" ${rabbit_definitions_file}
-else
-    sed -i "s|%PASSWORD%|${actual_hash}|g" ${rabbit_definitions_file}
-fi
 
 # ---------------------------------------------------------------------------
 # Helm installs
@@ -183,34 +173,12 @@ fi
 echo "Installing DYNAMOS core..."
 helm upgrade -i -f ${core_chart}/values.yaml core ${core_chart} --set hostPath=${DYNAMOS_HOST_ROOT}
 
-# Sync the RabbitMQ normal_user password to match the Kubernetes secret.
-# Without this, a pod restart after a second script run would pick up the new
-# secret value but RabbitMQ would still have the old hash → crash loop.
-echo "Syncing RabbitMQ normal_user password..."
-echo "  Waiting for RabbitMQ to be ready..."
-kubectl rollout status deployment/rabbitmq -n core --timeout=120s
-
-# Pod-ready (above) only means the container passed its readiness probe -
-# the RabbitMQ Erlang node inside can still be mid-boot, with the "rabbit"
-# app itself not started yet ("this command requires the 'rabbit' app to be
-# running" from rabbitmqctl). Most visible right after the whole kind node
-# was just cold-started (many pods booting at once) - retry instead of
-# failing the whole setup on a few seconds of normal startup lag.
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    if kubectl exec -n core deployment/rabbitmq -c rabbitmq -- \
-        rabbitmqctl change_password normal_user "${rabbit_pw}"; then
-        break
-    fi
-    if [[ "$attempt" -eq 10 ]]; then
-        echo "  RabbitMQ still not accepting rabbitmqctl commands after 10 attempts - giving up."
-        exit 1
-    fi
-    echo "  rabbit app not ready yet (attempt ${attempt}/10), retrying in 3s..."
-    sleep 3
-done
-echo "  RabbitMQ password synced."
-
-sleep 3
+# Keys for the job and service tokens, and one RabbitMQ user per service.
+# The services do not start without the "dynamos-auth" and
+# "dynamos-rabbitmq" Secrets. The script does not replace existing keys or
+# passwords, and it waits until RabbitMQ is ready.
+echo "Installing auth keys, RabbitMQ users and Secrets..."
+"${DYNAMOS_ROOT}/scripts/auth-secrets.sh"
 
 echo "Installing orchestrator layer..."
 helm upgrade -i -f "${orchestrator_chart}/values.yaml" orchestrator ${orchestrator_chart}

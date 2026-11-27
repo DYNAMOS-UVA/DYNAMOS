@@ -13,7 +13,6 @@ import (
 // In this function I want to simulate checking the policy Enforcer to see whether:
 //   - I can have an agreement with each data steward
 //   - Get a result channel or endpoint
-//   - Return an access token
 func checkRequestApproval(ctx context.Context, requestApproval *pb.RequestApproval) error {
 	logger.Debug("Starting checkRequestApproval")
 
@@ -46,17 +45,12 @@ func checkRequestApproval(ctx context.Context, requestApproval *pb.RequestApprov
 
 	protoRequest.RequestApproved = len(protoRequest.ValidDataproviders) > 0
 
-	protoRequest.Auth = generateAuthToken()
+	// No token here. The orchestrator mints the per-target job tokens once
+	// it has created the job and chosen the targets (see
+	// orchestrator/job_tokens.go). This service only decides approval.
 	c.SendValidationResponse(ctx, protoRequest)
 
 	return nil
-}
-
-func generateAuthToken() *pb.Auth {
-	return &pb.Auth{
-		AccessToken:  "1234",
-		RefreshToken: "1234",
-	}
 }
 
 func getValidAgreements(dataProviders []string, requestUser *pb.User, agreements *[]api.Agreement, protoRequest *pb.ValidationResponse) {

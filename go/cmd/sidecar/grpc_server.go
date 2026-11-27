@@ -111,6 +111,9 @@ func (s *serverInstance) Consume(in *pb.ConsumeRequest, stream pb.RabbitMQ_Consu
 
 	for msg := range messages {
 		logger.Sugar().Debugw("switchin: ", "msg,Type", msg.Type, "Port:", port)
+		if dropUnauthorized(msg, in.AutoAck) {
+			continue
+		}
 		switch msg.Type {
 		case "validationResponse":
 			if err := s.handleValidationResponse(msg, stream); err != nil {

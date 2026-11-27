@@ -127,6 +127,9 @@ func ChainConsume(ctx context.Context, queueName string, autoAck bool, msClient 
 		case msg := <-messages:
 			// Handle the message
 			logger.Sugar().Debugw("switchin:", "msg,Type", msg.Type)
+			if dropUnauthorized(msg, autoAck) {
+				continue
+			}
 			switch msg.Type {
 
 			case "microserviceCommunication":

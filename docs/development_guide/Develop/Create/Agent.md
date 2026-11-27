@@ -80,13 +80,15 @@ spec:
           image: {{ .Values.dockerArtifactAccount }}/sidecar:{{ .Values.branchNameTag }}
           imagePullPolicy: Always
           env:
+            # Each agent has its own RabbitMQ user, agent-<steward>.
+            # Add the user to scripts/auth-rabbitmq.sh (RMQ_STEWARDS).
+            - name: AMQ_USER
+              value: agent-testagent
             - name: AMQ_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: rabbit
-                  key: password
-            - name: AMQ_USER
-              value: normal_user
+                  name: dynamos-rabbitmq
+                  key: agent-testagent
             - name: OC_AGENT_HOST
               value: {{ .Values.tracingEndpoint }}
 
@@ -161,6 +163,22 @@ subjects:
     namespace: testAgent
 ---
 ```
+
+## Authentication
+
+A new agent needs its keys and its RabbitMQ users. Do these steps:
+
+1. Add the steward (lower case, for example `testagent`) to:
+   - `RMQ_STEWARDS` in `scripts/auth-rabbitmq.sh` (makes the users `agent-testagent` and `job-testagent`);
+   - the namespace loops in `scripts/auth-secrets.sh` (`apply_all` puts `orchestrator.pub.pem` in each agent namespace);
+   - `verifiers_of orchestrator` in `scripts/auth-secrets.sh`, so a key rotation restarts the new agent.
+2. In the agent container, add the auth environment and the Secret volume, the same as `charts/agents/templates/uva.yaml`:
+   `{{- include "dynamos.authEnv" . | trim | nindent 8 }}`, the `dynamos.authVolumeMount` and the `dynamos.authVolume`.
+3. Run `scripts/auth-secrets.sh`.
+
+The job queues of the agent must end with the steward name and a counter. `buildLocalJobName` in `go/cmd/agent/composition_request_handler.go` does this. The RabbitMQ permissions depend on it.
+
+See [Auth operations](../../Auth/Operations.md) for the details.
 
 # Code 
 

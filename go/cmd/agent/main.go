@@ -12,7 +12,6 @@ import (
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/lib"
-	"github.com/gorilla/handlers"
 	"go.opencensus.io/plugin/ochttp"
 	batchv1 "k8s.io/api/batch/v1"
 
@@ -62,6 +61,9 @@ func main() {
 		port = ":8083"
 	}
 
+	// Fail at startup: without a verifier every data request is rejected.
+	requestVerifier := mustBuildRequestVerifier()
+
 	_, err := lib.InitTracer(serviceName)
 	if err != nil {
 		logger.Sugar().Fatalf("Failed to create ocagent-exporter: %v", err)
@@ -83,23 +85,26 @@ func main() {
 		wg.Done() // Decrement the WaitGroup counter when the goroutine finishes
 	}()
 
-	headersOk := handlers.AllowedHeaders([]string{"X-Requested-With", "Content-Type", "Authorization"})
-	originsOk := handlers.AllowedOrigins([]string{"*"})
-	methodsOk := handlers.AllowedMethods([]string{"GET", "HEAD", "POST", "PUT", "OPTIONS"})
+	// Agents are called by api-gateway, not browsers, so CORS is off
+	// unless CORS_ALLOWED_ORIGINS is set.
+	corsOrigins, err := api.CORSOriginsFromEnv()
+	if err != nil {
+		logger.Sugar().Fatalf("Invalid CORS configuration: %v", err)
+	}
 
 	agentMux := http.NewServeMux()
 	agentMux.Handle(fmt.Sprintf("/agent/v1/sqlDataRequest/%s", strings.ToLower(serviceName)), &ochttp.Handler{Handler: sqlDataRequestHandler()})
 
 	// apiMux.Handle("/archetypes/", &ochttp.Handler{Handler: archetypesHandler(etcdClient, "/archetypes")})
 
-	wrappedAgentMux := authMiddleware(agentMux)
+	wrappedAgentMux := authMiddleware(requestVerifier, sqlDataRequestType)(agentMux)
 
 	mux := http.NewServeMux()
 	mux.Handle(fmt.Sprintf("/agent/v1/sqlDataRequest/%s", strings.ToLower(serviceName)), wrappedAgentMux)
 
 	logger.Sugar().Infow("Starting http server on: ", "port", port)
 	go func() {
-		if err := http.ListenAndServe(port, api.LogMiddleware(handlers.CORS(originsOk, headersOk, methodsOk)(mux))); err != nil {
+		if err := http.ListenAndServe(port, api.LogMiddleware(api.CORS(corsOrigins)(mux))); err != nil {
 			logger.Sugar().Fatalw("Error starting HTTP server: %s", err)
 		}
 	}()

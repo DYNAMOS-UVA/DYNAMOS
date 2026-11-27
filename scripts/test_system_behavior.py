@@ -1,3 +1,4 @@
+import os
 import requests
 import time
 import copy
@@ -7,13 +8,18 @@ import copy
 
 # =================================================================== Constants ===================================================================
 # DYNAMOS requests
-HEADERS = {
-    "Content-Type": "application/json",
-    # Access token required for data requests in DYNAMOS
-    "Authorization": "bearer 1234"
-}
+# Tokens come from the environment, never from this file:
+#   DYNAMOS_USER_TOKEN      bearer token for api-gateway (an end-user token)
+#   DYNAMOS_OPERATOR_TOKEN  bearer token for the orchestrator API, with
+#                           the orchestrator:write scope
+def auth_headers(env_name):
+    token = os.environ.get(env_name)
+    if not token:
+        raise SystemExit(f"{env_name} is not set")
+    return {"Content-Type": "application/json", "Authorization": f"Bearer {token}"}
+
 DATA_REQ_URL = "http://api-gateway.api-gateway.svc.cluster.local:80/api/v1/requestApproval"
-DATA_REQ_HEADERS = {"Content-Type": "application/json"}
+DATA_REQ_HEADERS = auth_headers("DYNAMOS_USER_TOKEN")
 # Use the default DYNAMOS request (no additional options used), as this is the setup most users will use
 REQUEST_BODY_DATA_REQ = {
     "type": "sqlDataRequest",
@@ -40,7 +46,7 @@ WEIGHTS = {
     "ComputeToData": 100,
     "DataThroughTTP": 300
 }
-HEADERS_UPDATE_ARCH = { "Content-Type": "application/json" }
+HEADERS_UPDATE_ARCH = auth_headers("DYNAMOS_OPERATOR_TOKEN")
 
 
 # =================================================================== Functions ===================================================================

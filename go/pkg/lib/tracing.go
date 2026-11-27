@@ -21,10 +21,10 @@ func InitTracer(serviceName string) (*ocagent.Exporter, error) {
 
 	// Create a new exporter that pushes spans to the agent over gRPC
 	oce, err := ocagent.NewExporter(
-		ocagent.WithInsecure(),                             // Skip TLS (adjust in production)
-		ocagent.WithReconnectionPeriod(5*time.Second),     // Retry if the collector is unavailable
-		ocagent.WithAddress(ocagentHost),                  // Collector endpoint
-		ocagent.WithServiceName(serviceName),              // Service name shown in trace viewers
+		ocagent.WithInsecure(),                        // Skip TLS (adjust in production)
+		ocagent.WithReconnectionPeriod(5*time.Second), // Retry if the collector is unavailable
+		ocagent.WithAddress(ocagentHost),              // Collector endpoint
+		ocagent.WithServiceName(serviceName),          // Service name shown in trace viewers
 	)
 
 	// Register this exporter as the trace output

@@ -22,20 +22,28 @@ You do not have to install `kind`, `kubectl`, `helm`, `tilt` or `linkerd`. `./dy
 Other commands:
 
 - `./dynamos-dev.sh status`: shows the state of the containers and Tilt.
+- `./dynamos-dev.sh tokens`: shows the dev auth tokens and the RabbitMQ admin password as shell exports. Use `eval "$(./dynamos-dev.sh tokens)"`.
 - `./dynamos-dev.sh reset`: deletes the cluster and the registry (all data). Use it to start again from a clean state. Then run `./dynamos-dev.sh up`.
 
 The script uses only the kube context `kind-dynamos`. It does not change other clusters.
 
 ## Send requests
 
-In the Tilt UI, start the `ingress-port-forward` resource. It forwards `localhost:8080` to the NGINX ingress:
+In the Tilt UI, start the `ingress-port-forward` resource. It forwards `localhost:8080` to the NGINX ingress.
+
+The services need a bearer token. Load the dev tokens first:
 
 ```bash
+eval "$(./dynamos-dev.sh tokens)"
+
 curl http://localhost:8080/api/v1/requestApproval \
   -H 'Host: api-gateway.api-gateway.svc.cluster.local' \
+  -H "Authorization: Bearer $DYNAMOS_USER_TOKEN" \
   -H 'Content-Type: application/json' \
   --data-raw '{...}'
 ```
+
+Use `$DYNAMOS_OPERATOR_TOKEN` for the orchestrator API (`Host: orchestrator.orchestrator.svc.cluster.local`). See [Authentication](../Auth/README.md).
 
 ## What Tilt builds
 
@@ -52,6 +60,7 @@ curl http://localhost:8080/api/v1/requestApproval \
 - **Registry:** the container `kind-registry` is a Docker registry at `localhost:5001`. The kind node uses it through `/etc/containerd/certs.d`. It has no restart policy, thus it does not start after a reboot.
 - **Service images:** `go/Dockerfile.tilt` builds each Go service. The result is the same as `go/Dockerfile` (Alpine, binary at `/app/<name>`). BuildKit cache mounts keep the Go caches, thus a rebuild is fast. Tilt watches `go/go.mod`, `go/go.sum`, `go/pkg/` and `go/cmd/<name>/`. A change in `go/pkg/` builds all images again.
 - **Job images:** the agent creates the job containers at runtime (`go/cmd/agent/deploy_job.go`) as `$MICROSERVICE_REPOSITORY_NAME/<name>:$<NAME>_TAG` with pull policy `Always`. Tilt sets these variables on the agent Deployments `uva`, `vu` and `surf` (only in the YAML that Tilt applies, not in the charts). Thus each new job pulls the newest `:dev` image. `scripts/tilt-build-sql-query.sh` builds `sql-query` with the same steps as `python/Makefile`, in a temporary directory.
+- **Auth:** each `./dynamos-dev.sh up` runs `scripts/auth-secrets.sh`. It makes the keys, the dev tokens and the RabbitMQ users (in `.dev/auth`, ignored by git) and puts them in the Secrets `dynamos-auth` and `dynamos-rabbitmq`. `go/Dockerfile.tilt` builds with `-tags authdev`, and the Tiltfile sets `auth.devToken.enabled=true` for the orchestrator and api-gateway, so the dev tokens work only in Tilt.
 - **Charts:** Tilt renders the charts with `helm template` and the same `values.yaml` files as `dynamos-configuration.sh`, and applies them with `kubectl apply`. Thus `helm list` shows the release revision from the configuration script.
 
 ## Troubleshooting
@@ -62,3 +71,6 @@ curl http://localhost:8080/api/v1/requestApproval \
 | `Current kube context is ...` | Run `./dynamos-dev.sh up`. It selects `kind-dynamos`. |
 | Pods restart, sidecar shows `nil pointer` at `grpc_server.go` | RabbitMQ does not run. Run `kubectl get pods -n core`. If the infrastructure is damaged, run `./dynamos-dev.sh reset` and `./dynamos-dev.sh up`. |
 | The first `up` stopped with an error | Run `./dynamos-dev.sh up` again. The configuration script is safe to run again. |
+| `401 Unauthorized` from api-gateway or the orchestrator | The request has no token or a wrong token. Run `eval "$(./dynamos-dev.sh tokens)"` and send `Authorization: Bearer ...`. |
+| A pod waits with `secret "dynamos-auth" not found` or `"dynamos-rabbitmq" not found` | Run `./dynamos-dev.sh up`. It creates the Secrets. |
+| Sidecar: `username or password not allowed` | The pod started before the RabbitMQ users existed. Run `./dynamos-dev.sh up`, then restart the pod in the Tilt UI. |

@@ -16,8 +16,8 @@ import (
 	pb "github.com/DYNAMOS-UVA/DYNAMOS/pkg/proto"
 	"github.com/google/uuid"
 	clientv3 "go.etcd.io/etcd/client/v3"
-	"go.opencensus.io/trace/propagation"
 	"go.opencensus.io/trace"
+	"go.opencensus.io/trace/propagation"
 )
 
 func requestHandler() http.HandlerFunc {
@@ -41,6 +41,17 @@ func requestHandler() http.HandlerFunc {
 			return
 		}
 
+		// The job runs for the authenticated caller. A user name in the
+		// body is ignored, so a caller cannot act as another user.
+		userName, err := requestingUser(r.Context())
+		if err != nil {
+			logAuthFailure(w, r, err)
+			return
+		}
+		if apiReqApproval.User.UserName != "" && apiReqApproval.User.UserName != userName {
+			logger.Sugar().Infow("ignoring user name in request body, using the authenticated user", "authenticated", userName)
+		}
+
 		// requestApprovalMap is keyed on User.Id, so it must be unique per
 		// in-flight HTTP request, not just per caller. A caller-supplied Id
 		// (or the common case of no Id at all) collides across concurrent
@@ -53,7 +64,7 @@ func requestHandler() http.HandlerFunc {
 		// round trip.
 		userPb := &pb.User{
 			Id:       uuid.New().String(),
-			UserName: apiReqApproval.User.UserName,
+			UserName: userName,
 		}
 
 		var dataRequestInterface map[string]interface{}
@@ -135,7 +146,7 @@ func requestHandler() http.HandlerFunc {
 			logger.Sugar().Infof("Data Prepared jsonData: %s", dataRequestJson)
 
 			// Send the data to the authorized providers
-			responses, allSucceeded := sendDataToAuthProviders(dataRequestJson, msg.AuthorizedProviders, apiReqApproval.Type, msg.JobId)
+			responses, allSucceeded := sendDataToAuthProviders(dataRequestJson, msg.AuthorizedProviders, msg.ProviderTokens, apiReqApproval.Type, msg.JobId)
 			if !allSucceeded {
 				// At least one authorized provider failed to handle the data
 				// request. Callers (e.g. transfer-process-service) only check
@@ -166,7 +177,11 @@ func requestHandler() http.HandlerFunc {
 // succeeded. A single failed provider still marshals a response body (so
 // callers can see which one and what the other providers returned), but
 // callers must check this before treating the request as a success.
-func sendDataToAuthProviders(dataRequest []byte, authorizedProviders map[string]string, msgType string, jobId string) ([]byte, bool) {
+//
+// providerTokens holds the orchestrator-issued token for each provider,
+// keyed like authorizedProviders. A provider without a token is not
+// called and counts as failed.
+func sendDataToAuthProviders(dataRequest []byte, authorizedProviders map[string]string, providerTokens map[string]string, msgType string, jobId string) ([]byte, bool) {
 	// Setup the wait group for async data requests
 	var wg sync.WaitGroup
 	var mu sync.Mutex
@@ -186,9 +201,17 @@ func sendDataToAuthProviders(dataRequest []byte, authorizedProviders map[string]
 		// Print the request to the console (without \n to avoid the log only showing first line when searching)
 		logger.Sugar().Infof("Sending request to %s. Endpoint: %s JSON:%v", target, endpoint, string(dataRequest))
 
+		token := providerTokens[auth]
+		if token == "" {
+			logger.Sugar().Errorw("no access token for provider, not sending the data request", "provider", target, "jobId", jobId)
+			allSucceeded.Store(false)
+			wg.Done()
+			continue
+		}
+
 		// Async call send the data
 		go func() {
-			respData, err := sendData(endpoint, dataRequest)
+			respData, err := sendData(endpoint, dataRequest, token)
 			if err != nil {
 				logger.Sugar().Errorf("Error sending data, %v", err)
 				allSucceeded.Store(false)
@@ -224,10 +247,10 @@ func cleanupAndMarshalResponse(responseMap map[string]interface{}) []byte {
 	return prettifiedJSON
 }
 
-func sendData(endpoint string, jsonData []byte) (string, error) {
-	// FIXME: Change to an actual token in the future?
+// sendData posts jsonData to endpoint with the provider's job token.
+func sendData(endpoint string, jsonData []byte, token string) (string, error) {
 	headers := map[string]string{
-		"Authorization": "bearer 1234",
+		"Authorization": "Bearer " + token,
 	}
 	// Request the data using the endpoint, body and headers
 	body, err := api.PostRequest(endpoint, string(jsonData), headers)

@@ -450,11 +450,10 @@ Both local clusters connect through the same Docker bridge network. This connect
 `setup-demos.sh` calls `dynamos-configuration.sh` as part of step 4. `dynamos-configuration.sh` is the core DYNAMOS deployment script. `dynamos-configuration.sh` runs these steps:
 
 - confirms the correct cluster is the active `kubectl` context
-- creates a fresh, random password for RabbitMQ
-- writes this password into RabbitMQ's configuration, and pushes this configuration into RabbitMQ's persistent volume through a temporary pod, using the script `fill-rabbit-pvc.sh`
+- pushes RabbitMQ's configuration (exchanges and queues, no users) into RabbitMQ's persistent volume through a temporary pod, using the script `fill-rabbit-pvc.sh`
 - installs or upgrades Prometheus, the ingress controller, the Gateway API resources, and the service mesh
 - installs the `core` Helm chart, which includes etcd, RabbitMQ, and the observability stack
-- waits for RabbitMQ to start, then updates RabbitMQ's internal user password to match the new secret
+- runs `scripts/auth-secrets.sh`, which makes the auth keys, creates one RabbitMQ user for each service, and puts the keys and passwords in Kubernetes Secrets (see `docs/development_guide/Auth/`)
 - installs each remaining Helm chart in order: `orchestrator`, `agents`, `catalog-service`, `negotiation-service`, `transfer-process-service`, `dsp-connector`, `thirdparty`, and `api-gateway`
 
 ### 6.3 `dsp-transfer-demo.sh` — DYNAMOS-to-DYNAMOS Demo
@@ -516,9 +515,9 @@ A developer must run `setup-demos.sh` before running `dsp-external-consumer-demo
 
 ### 7.2 Top Risks
 
-1. **The non-DSP authentication path accepts any token.** `go/cmd/policy-enforcer/generate_validation_response.go:55-60` always returns the fixed token `"1234"`. `go/cmd/api-gateway/requests.go:228-231` always sends `"bearer 1234"`. `go/cmd/agent/token_validation.go:25-29` reads a bearer token but never checks it. A caller can send any token value and pass this check.
-2. **`orchestrator`'s write API has no authentication.** `go/cmd/orchestrator/api.go:62-88` — any caller that can reach this API can overwrite agreements, policy data, and archetype configuration directly in etcd, and can trigger a full configuration reload.
-3. **RabbitMQ ships with default credentials, reachable from outside the cluster.** `charts/core/values.yaml:9-12,10`, `configuration/k8s_service_files/rabbitmq.conf:8`, and `charts/core/templates/rabbitmq-services.yaml:9-24` set the default login `guest`/`guest`, a fixed Erlang cookie, and remote guest login, all committed in plain text, exposed through a NodePort service. A caller with network access has full administrative control of the message broker that every service depends on.
+1. **The non-DSP authentication path accepts any token.** `go/cmd/policy-enforcer/generate_validation_response.go:55-60` always returns the fixed token `"1234"`. `go/cmd/api-gateway/requests.go:228-231` always sends `"bearer 1234"`. `go/cmd/agent/token_validation.go:25-29` reads a bearer token but never checks it. A caller can send any token value and pass this check. **Status: fixed** on branch `feature/authentication`. The orchestrator now mints a short-lived token for each agent of a job, and the agent checks the token, the job and the user. See `docs/development_guide/Auth/`.
+2. **`orchestrator`'s write API has no authentication.** `go/cmd/orchestrator/api.go:62-88` — any caller that can reach this API can overwrite agreements, policy data, and archetype configuration directly in etcd, and can trigger a full configuration reload. **Status: fixed** on branch `feature/authentication`. The orchestrator API needs a token with the scope `orchestrator:read` or `orchestrator:write`.
+3. **RabbitMQ ships with default credentials, reachable from outside the cluster.** `charts/core/values.yaml:9-12,10`, `configuration/k8s_service_files/rabbitmq.conf:8`, and `charts/core/templates/rabbitmq-services.yaml:9-24` set the default login `guest`/`guest`, a fixed Erlang cookie, and remote guest login, all committed in plain text, exposed through a NodePort service. A caller with network access has full administrative control of the message broker that every service depends on. **Status: partly fixed** on branch `feature/authentication`. Each service has its own RabbitMQ user, `guest` and `normal_user` are removed, and `guest` works only from localhost. The fixed Erlang cookie and the NodePort service are still open.
 4. **No NetworkPolicy resource exists in any Helm chart.** DYNAMOS's design separates each data-steward party into its own namespace. Without a NetworkPolicy, any pod in any namespace can reach any pod in any other namespace over the pod network. This makes the namespace separation a naming convention only, not a real network boundary.
 5. **The federated SQL query service runs an untrusted query string directly.** `python/sql-query/main.py:84` passes the caller's query string straight to SQLite through pandasql, with no check that limits the query to `SELECT` statements, no parameterization, and no complexity limit. This is the core function of this service, and also its core risk.
 6. **The sidecar service treats a normal runtime error as a fatal error.** `go/cmd/sidecar/grpc_server.go:63-66,73-76` and `go/cmd/sidecar/rabbit_setup_functions.go:42,50,68,74,95` call `Fatalw`, which stops the whole process, on a RabbitMQ error that can happen during normal operation, not only at startup. A single transient RabbitMQ error stops the entire sidecar pod.
@@ -592,7 +591,7 @@ _*archetype_playground, loadtest, and the sql-* tools_*
 
 - `go/cmd/archetype_playground/pseudocode.go` — this file contains plain pseudocode, not valid Go code. This file breaks a repository-wide build or `vet` check unless a developer excludes it. CI already excludes this file. Severity: Medium.
 - `go/cmd/sql-algorithm/application_logic.go:178-229` and `go/cmd/sql-anonymize/application_logic.go:44` — these files contain fixed column names written directly into the code. These services are meant to work with more than one dataset, but these fixed names limit each service to one demo dataset's structure. Severity: Medium.
-- `go/cmd/loadtest/main.go:41,221` — this file uses the same fixed `"bearer 1234"` token used elsewhere, and contains large blocks of commented-out code. Severity: Low.
+- `go/cmd/loadtest/main.go:41,221` — this file uses the same fixed `"bearer 1234"` token used elsewhere, and contains large blocks of commented-out code. Severity: Low. **Status: the token is fixed** (`DYNAMOS_TOKEN` and the per-agent job tokens); the commented-out code is still there.
 - `go/cmd/sql-test/main.go:103-142` — this file's `main` function is mostly commented-out code, left in the repository as if it were a working service. Severity: Low.
 - `go/cmd/sql-aggregate/application_logic.go:1-9` — this file starts with unedited planning notes above the code itself. Severity: Low.
 

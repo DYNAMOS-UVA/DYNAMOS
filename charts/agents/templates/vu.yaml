@@ -25,19 +25,26 @@ spec:
           value: VU
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}
+        {{- include "dynamos.authEnv" . | trim | nindent 8 }}
+        volumeMounts:
+        {{- include "dynamos.authVolumeMount" . | nindent 8 }}
       - name: sidecar
         image: {{ .Values.dockerArtifactAccount }}/sidecar:{{ .Values.branchNameTag }}
         imagePullPolicy: Always
         env:
+        # Own RabbitMQ user (scripts/auth-secrets.sh sets its password and
+        # broker permissions).
+        - name: AMQ_USER
+          value: agent-vu
         - name: AMQ_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: rabbit
-              key: password
-        - name: AMQ_USER
-          value: normal_user
+              name: dynamos-rabbitmq
+              key: agent-vu
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}
+      volumes:
+      {{- include "dynamos.authVolume" . | nindent 6 }}
 
 ---
 

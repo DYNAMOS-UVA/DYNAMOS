@@ -109,11 +109,16 @@ message RequestApproval {
 message RequestApprovalResponse  {
   string type = 1;
   User user = 2;
+  // Deprecated: not set any more. Use provider_tokens.
   Auth auth = 3;
   map<string, string> authorized_providers = 4;
   string job_id = 5;
   string error = 6;
   RequestMetadata request_metadata = 7;
+  // Bearer token for each target, keyed like authorized_providers. Each
+  // token is bound to one target (aud), the user (sub) and job_id, so a
+  // token sent to one agent cannot be replayed against another.
+  map<string, string> provider_tokens = 8;
 }
 
 message PolicyUpdate {

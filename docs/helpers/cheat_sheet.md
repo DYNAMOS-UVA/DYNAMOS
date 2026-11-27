@@ -108,8 +108,10 @@ export SIDECAR_PORT=50051
 export DESIGNATED_GRPC_PORT=50052
 export FIRST=1
 export LAST=1
-export AMQ_PASSWORD="e3febc96e3060970414ac94b9f0fc020"
-export AMQ_USER="normal_user"
+# Use the user and password of the service, from the Secret
+# dynamos-rabbitmq (see docs/development_guide/Auth/Operations.md).
+export AMQ_USER="job-uva"
+export AMQ_PASSWORD="<password from .dev/auth/rabbitmq/job-uva.password>"
 
 # Linkerd
 https://linkerd.io/2.13/getting-started/
@@ -148,7 +150,7 @@ kubectl get svc --namespace ingress nginx
 
 # RabbitMQ
 ## See RabbitMQ information
-Go to http://localhost:30000/ and login with "guest" as username and password. Here you can view queues and other things.
+Go to http://localhost:30000/ and log in as `dynamos-admin`. Get the password with `./dynamos-dev.sh tokens` (`DYNAMOS_RABBITMQ_ADMIN_PASSWORD`). Here you can view queues and other things.
 
 
 # Infinite job creation (i.e., jobs removed keep being recreated in k8s)

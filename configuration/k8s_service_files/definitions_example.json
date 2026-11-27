@@ -3,54 +3,14 @@
     "rabbitmq_version": "3.11.7",
     "product_name": "RabbitMQ",
     "product_version": "3.11.7",
-    "users": [
-        {
-            "name": "normal_user",
-            "password_hash": "%PASSWORD%",
-            "hashing_algorithm": "rabbit_password_hashing_sha256",
-            "tags": [],
-            "limits": {}
-        },
-        {
-            "name": "guest",
-            "password_hash": "HByc/azuDkuK/Eq+aFJa1CeirrEFNmOjkH9ESNIQ7D/3H6BU",
-            "hashing_algorithm": "rabbit_password_hashing_sha256",
-            "tags": [
-                "administrator"
-            ],
-            "limits": {}
-        }
-    ],
+    "users": [],
     "vhosts": [
         {
             "name": "/"
         }
     ],
-    "permissions": [
-        {
-            "user": "normal_user",
-            "vhost": "/",
-            "configure": ".*",
-            "write": ".*",
-            "read": ".*"
-        },
-        {
-            "user": "guest",
-            "vhost": "/",
-            "configure": ".*",
-            "write": ".*",
-            "read": ".*"
-        }
-    ],
-    "topic_permissions": [
-        {
-            "user": "normal_user",
-            "vhost": "/",
-            "exchange": "topic_exchange",
-            "write": ".*",
-            "read": ".*"
-        }
-    ],
+    "permissions": [],
+    "topic_permissions": [],
     "parameters": [],
     "global_parameters": [
         {

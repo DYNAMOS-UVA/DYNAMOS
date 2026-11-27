@@ -27,6 +27,9 @@ spec:
           value: UVA
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}
+        {{- include "dynamos.authEnv" . | trim | nindent 8 }}
+        volumeMounts:
+        {{- include "dynamos.authVolumeMount" . | nindent 8 }}
         # resources:
         #   requests:
         #     memory: "128Mi"
@@ -36,15 +39,19 @@ spec:
         image: {{ .Values.dockerArtifactAccount }}/sidecar:{{ .Values.branchNameTag }}
         imagePullPolicy: Always
         env:
+        # Own RabbitMQ user (scripts/auth-secrets.sh sets its password and
+        # broker permissions).
+        - name: AMQ_USER
+          value: agent-uva
         - name: AMQ_PASSWORD
           valueFrom:
             secretKeyRef:
-              name: rabbit
-              key: password
-        - name: AMQ_USER
-          value: normal_user
+              name: dynamos-rabbitmq
+              key: agent-uva
         - name: OC_AGENT_HOST
           value: {{ .Values.tracingEndpoint }}
+      volumes:
+      {{- include "dynamos.authVolume" . | nindent 6 }}
 
 ---
 

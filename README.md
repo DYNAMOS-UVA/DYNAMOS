@@ -29,7 +29,7 @@ The Fabric-CloudLab profile can be cloned and adapted from the [dynamos-cluster]
   - [8. k9s (optional)](#8-k9s-optional)
 - [System Configuration](#system-configuration)
   - [9. Install script](#9-install-script)
-  - [10. RabbitMQ password process](#10-rabbitmq-password-process)
+  - [10. RabbitMQ users and auth keys](#10-rabbitmq-users-and-auth-keys)
     - [10.1. Configure Rabbit PVC](#101-configure-rabbit-pvc)
   - [11. Ingress](#11-ingress)
     - [11.1. Update hostfile](#111-update-hostfile)
@@ -242,8 +242,8 @@ To run the script, execute the following from the root of DYNAMOS
   ./configuration/dynamos-configuration.sh
 ```
 
-- Set all requirements for the RabbitMQ password, see section [RabbitMQ password process](#rabbitMQ-password-process)
-- Create all namespaces with this RabbitMQ password
+- Create all namespaces
+- Create the RabbitMQ users and the auth keys, see section [RabbitMQ users and auth keys](#10-rabbitmq-users-and-auth-keys)
 - Deploy all services:
   - Ingress
   - Prometheus
@@ -255,33 +255,26 @@ To run the script, execute the following from the root of DYNAMOS
 Understanding this script will help understanding how DYNAMOS is deployed.
 
 
-##  10. <a name='RabbitMQpasswordprocess'></a>RabbitMQ password process
+##  10. <a name='RabbitMQpasswordprocess'></a>RabbitMQ users and auth keys
 
-**This is an explanation of the aforemntioned install script. Do not need to run the commands if the script was successful.**
+**The install script does these steps. You do not have to run the commands if the script was successful.**
 
-Every service in DYNAMOS that connects to RabbitMQ requires a user with a password that are configured in RabbitMQ. For now every service has the user 'normal_user' and they share a generic password that we will show how to generate here.
+Each service has its own RabbitMQ user and password, with access only to its own queues. The services also need keys for the tokens that they send to each other. `scripts/auth-secrets.sh` makes all of this:
 
 ```bash
-# NOTE: Below commands are snippets from the full script, for working execution see the full script for all details
+# Make missing keys and passwords, put them in Kubernetes Secrets,
+# and create the RabbitMQ users. Safe to run again.
+scripts/auth-secrets.sh
 
-# Create a password for a rabbit user
-rabbit_pw=$(openssl rand -hex 16)
-
-# Use the RabbitCtl to make a special hash of that password:
-rabbiq_mq_hash=$($SUDO docker run --rm rabbitmq:3-management rabbitmqctl hash_password $rabbit_pw)
-hashed_pw=$(echo "$rabbiq_mq_hash" | cut -d $'\n' -f2)
-
-# The Rabbit Hashed password needs to be in definitions.json file, that is the configuration for RabbitMQ
-sed -i "s|%PASSWORD%|${hashed_pw}|g" ${rabbit_definitions_file}
-
-# Create Kubernetes namespaces and Kubernetes secrets with the generated password
-helm upgrade -i -f ${namespace_chart}/values.yaml namespaces ${namespace_chart} --set secret.password=${rabbit_pw}
-
+# Show the state of the keys and passwords
+scripts/auth-secrets.sh status
 ```
 
 Now:
-- The RabbitMQ instance reads 'definitions.json' with the rabbitmqctl hashed PW.
-- The actual password is stored as a Kubernetes secret in each namespace, so that services can access it and use it to authenticate with RabbitMQ
+- Each namespace has the Secret `dynamos-rabbitmq` with the RabbitMQ passwords of its services, and the Secret `dynamos-auth` with its keys.
+- RabbitMQ has one user per service. The old shared users `normal_user` and `guest` are removed.
+
+See [docs/development_guide/Auth](docs/development_guide/Auth/README.md) for the details, the key rotation and the troubleshooting.
 
 
 ###  10.1. <a name='ConfigureRabbitPVC'></a>Configure Rabbit PVC
@@ -368,9 +361,10 @@ as a **POST** request, with the following body with **JSON** encoding:
 }
 ```
 
-E.g. using curl:
+E.g. using curl. api-gateway needs a bearer token, and it takes the user from the token, not from the `user` field (see [Auth](docs/development_guide/Auth/README.md)):
 ```
 curl --location 'http://api-gateway.api-gateway.svc.cluster.local:80/api/v1/requestApproval' \
+--header "Authorization: Bearer $DYNAMOS_USER_TOKEN" \
 --header 'Content-Type: application/json' \
 --data-raw '{
     "type": "sqlDataRequest",
@@ -396,9 +390,9 @@ curl --location 'http://api-gateway.api-gateway.svc.cluster.local:80/api/v1/requ
 
 ##  14. <a name='ServicescrashbecausetheconnectiontoRabbitMQdoesnotwork'></a>Services crash because the connection to RabbitMQ does not work
 
-See [RabbitMQ password process](#rabbitmq-password-process) and/or [Configure Rabbit PVC](#configure-rabbit-pvc)
+See [RabbitMQ users and auth keys](#10-rabbitmq-users-and-auth-keys) and/or [Configure Rabbit PVC](#configure-rabbit-pvc)
 
 - Is RabbitMQ running? `kubectl get pods -n core`
-- Use K9S or Kubectl to get shell access to RabbitMQ. Check whether there is a `definitions.json` file in `/mnt` with a hashed password
-- Check if a Kubernetes secret exists in the namespace of your crashing pod. `kubectl get secret "rabbit" -n <NAMESPACE> -o json | jq -r ".[\"data\"][\"password\"]" | base64 -d`
-Note, this password does not match the one in `definition.json`. But you can try hashing this password with rabbitctl and place it in the `defintions.json` to see if this was the issue.
+- Does the Secret `dynamos-rabbitmq` exist in the namespace of your crashing pod? `kubectl get secret dynamos-rabbitmq -n <NAMESPACE>`
+- Does the sidecar log show `username or password not allowed`? Run `scripts/auth-secrets.sh` again, then restart the pod.
+- See the troubleshooting table in [Auth operations](docs/development_guide/Auth/Operations.md#troubleshooting).

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -139,6 +140,12 @@ func requestJobExecution(t *TransferProcess) (json.RawMessage, error) {
 		return nil, fmt.Errorf("building job request for transfer %q: %w", t.ProviderPid, err)
 	}
 	req.Header.Set("Content-Type", "application/json")
+	// api-gateway takes the job's user from this token, not from the body.
+	token, err := gatewayToken(context.Background(), t.Participant)
+	if err != nil {
+		return nil, fmt.Errorf("authenticating job request for transfer %q: %w", t.ProviderPid, err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
 	// apiGatewayHost sets the name-based routing header the local dev
 	// ingress needs (config_local.go). In-cluster calls dial the real
 	// DNS name directly (config_prod.go), so this repeats it as a no-op.

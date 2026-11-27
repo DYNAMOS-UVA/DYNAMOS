@@ -5,3 +5,17 @@ tracingEndpoint: collector.linkerd-jaeger:55678
 branchNameTag: "main"
 dockerArtifactAccount: "dynamos1"
 
+
+# Authentication (see templates/_auth.tpl and scripts/auth-secrets.sh).
+# The agent accepts only job tokens from the orchestrator. The token
+# audience must be this agent's DATA_STEWARD_NAME (the default when
+# AUTH_JWT_AUDIENCE is not set).
+auth:
+  secretName: dynamos-auth
+  env:
+    AUTH_PROVIDERS: jwt
+    AUTH_JWT_ISSUER: dynamos-orchestrator
+    AUTH_JWT_PUBLIC_KEY_FILES: /etc/dynamos/auth/orchestrator.pub.pem
+
+# Browser origins allowed to call the agent, comma-separated. Empty: no CORS.
+corsAllowedOrigins: ""

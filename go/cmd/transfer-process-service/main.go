@@ -60,6 +60,8 @@ func main() {
 		connectorBaseURL = v
 	}
 
+	configureGatewayAuth()
+
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()
 
