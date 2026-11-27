@@ -151,6 +151,8 @@ Two endpoints stay outside `/api/v1`: `/health` and `/.well-known/dspace-version
 
 `dsp-connector` validates the `agreementId` field on an incoming Transfer Request in two steps. First, `dsp-connector` tries to find a negotiation by `providerPid`, using the value of `agreementId` as that ID. This was DYNAMOS's original design, and DYNAMOS's own Consumer role and the TCK still use it. Second, if that lookup fails, `dsp-connector` looks up the negotiation by the Agreement's own `@id` field. Testing against a real, unmodified external DSP connector showed that this second method is what the DSP spec actually expects.
 
+`transfer-process-service` does the same check again before it saves a Provider-role transfer, because a saved transfer starts a job for the participant. It reads the negotiation from etcd in the same two steps (`go/cmd/transfer-process-service/agreement.go`). The negotiation must be a Provider-role negotiation of the same steward, belong to the participant in the request, and be `FINALIZED`. Otherwise `transfer-process-service` answers `404 agreement-not-found` or `409 agreement-not-finalized`, and `dsp-connector` sends the consumer `400 invalid-agreement`.
+
 **Transfer Process endpoints, Consumer role, received by `dsp-connector`:**
 
 - `POST /api/v1/callback/transfers/{consumerPid}/start`
@@ -158,6 +160,7 @@ Two endpoints stay outside `/api/v1`: `/health` and `/.well-known/dspace-version
 - `POST /api/v1/callback/transfers/{consumerPid}/suspension`
 - `POST /api/v1/callback/transfers/{consumerPid}/termination`
 - `POST /api/v1/transfers/initiate` — starts a Consumer-role transfer. This endpoint is a DYNAMOS addition, not part of the DSP spec.
+  The caller must be the identity that started the negotiation (the negotiation's `remoteParticipant`). Another caller gets the same answer as for an unknown negotiation.
 
 **Identity and DAT verification.** Every DSP-facing endpoint requires an `Authorization: Bearer <token>` header. `dsp-connector` reads the `iss` claim from the token. This claim gives a `did:web` identifier. `dsp-connector` resolves this identifier to a public key over HTTP, using the pattern `did:web:{host%3Aport}:{path...}` → `https://{host}:{port}/{path...}/did.json`. `dsp-connector` checks the token's signature against this public key, using the ES256 or EdDSA algorithm.
 
@@ -224,6 +227,8 @@ The DSP spec separates two layers: the control plane and the data plane. The con
 **Start message asymmetry.** The Provider sends the first `REQUESTED → STARTED` message. `dsp-connector` sends this message outbound to the Consumer; no inbound endpoint exists for it. Only the resume case, `SUSPENDED → STARTED`, arrives as an inbound message from the Consumer, at `POST /transfers/{providerPid}/start`.
 
 **Internal API.** `transfer-process-service` exposes endpoints under `/internal/v1/transfers/...`, plus a parallel set under `/internal/v1/transfers/consumer/...`. The endpoints cover create, read, start, completion, suspension, and termination. Each request must have a service token from `dsp-connector` (kind `service`, scope `transfer-process-service:internal`). `/health` does not need a token. See `docs/development_guide/Auth/Flows.md`.
+
+The Consumer-role create (`POST /internal/v1/transfers/consumer`) takes `negotiationId`, the `consumerPid` of the negotiation. `transfer-process-service` reads that negotiation from etcd. The negotiation must be a Consumer-role negotiation of the same steward, be `FINALIZED`, and name its remote Provider. `transfer-process-service` takes the Provider's endpoint and identity and the `agreementId` from the stored negotiation, never from the request body. Otherwise it answers `404 negotiation-not-found` or `409 negotiation-not-finalized`, and sends nothing to a Provider.
 
 **Job-execution wiring.** `transfer-process-service` connects a DSP transfer to a DYNAMOS job in these steps:
 

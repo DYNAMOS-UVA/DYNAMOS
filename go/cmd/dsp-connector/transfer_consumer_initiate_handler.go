@@ -33,14 +33,15 @@ func transferConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Unlike negotiationConsumerInitiateHandler, this caller's identity is
-	// never reused as the remote Provider's identity - there is no
-	// TCK-style single-shared-Authorization convention for a real
-	// two-DYNAMOS-instances transfer. This check only gates who may
-	// trigger the call locally. The remote Provider's identity and DSP
-	// base URL are already known: captured on the FINALIZED negotiation
-	// itself when the #80-#87 flow created it.
-	if _, ok := participantFromRequest(r); !ok {
+	// The remote Provider's identity and DSP base URL are already known:
+	// captured on the FINALIZED negotiation itself when the #80-#87 flow
+	// created it. The caller must be the identity that started that
+	// negotiation: negotiationConsumerInitiateHandler stores its verified
+	// caller as RemoteParticipant (the single-shared-Authorization
+	// convention). Any other participant must not be able to start a
+	// transfer under it.
+	caller, ok := participantFromRequest(r)
+	if !ok {
 		writeTransferError(w, http.StatusUnauthorized, "", "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
 		return
 	}
@@ -67,6 +68,13 @@ func transferConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) {
 		}
 		logger.Sugar().Errorw("negotiation-service request failed", "negotiationId", body.NegotiationId, "error", err)
 		writeTransferError(w, http.StatusBadGateway, "", "", "upstream-error", "Failed to look up negotiation.")
+		return
+	}
+	if err := checkConsumerNegotiationOwnership(n, caller); err != nil {
+		// Same answer as an unknown negotiation, so a caller cannot find
+		// out which negotiationIds exist.
+		logger.Sugar().Infow("Transfer initiate denied: caller does not own the negotiation", "negotiationId", body.NegotiationId, "participant", caller)
+		writeTransferError(w, http.StatusBadRequest, "", "", "invalid-negotiation", "negotiationId does not name a known Consumer-role negotiation")
 		return
 	}
 	if n.State != "FINALIZED" {
@@ -104,7 +112,7 @@ func transferConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) {
 	ownParticipant := r.Header.Get("Authorization")
 	callbackAddress := connectorBaseURL + apiVersion + "/callback"
 
-	t, err := createConsumerTransfer(n.ProviderEndpoint, ownParticipant, n.RemoteParticipant, n.ProviderPid, body.Format, callbackAddress, body.DataAddress)
+	t, err := createConsumerTransfer(body.NegotiationId, ownParticipant, body.Format, callbackAddress, body.DataAddress)
 	if err != nil {
 		mapTransferServiceError(w, "", "", err)
 		return

@@ -36,6 +36,7 @@ const tpFixtureAgreementId = "urn:dynamos:negotiation:VU:tck-tp-fixture"
 // negotiationSeed mirrors negotiation-service's own Negotiation struct
 // (cmd/negotiation-service/negotiation.go) field-for-field.
 type negotiationSeed struct {
+	Kind            string          `json:"kind"`
 	ProviderPid     string          `json:"providerPid"`
 	ConsumerPid     string          `json:"consumerPid"`
 	Party           string          `json:"party"`
@@ -54,6 +55,7 @@ func main() {
 
 	now := time.Now().UTC()
 	n := negotiationSeed{
+		Kind:        "Provider",
 		ProviderPid: tpFixtureAgreementId,
 		ConsumerPid: "urn:dynamos:tck:consumer:tp-fixture",
 		Party:       "VU",

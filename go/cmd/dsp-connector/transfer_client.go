@@ -81,6 +81,14 @@ var transferServiceClient = internalServiceClient(func() string { return transfe
 var transferServiceErrorCodes = map[string]error{
 	"transfer-not-found": ErrTransferNotFound,
 	"invalid-transition": ErrTransferInvalidTransition,
+	// transfer-process-service checks the agreement again on create. The
+	// connector checks it first, so these normally come only from a race
+	// or from a mismatch between the two checks.
+	"agreement-not-found":     ErrAgreementNotFound,
+	"agreement-not-finalized": ErrInvalidAgreement,
+	// The same check for a Consumer-role create.
+	"negotiation-not-found":     ErrInvalidAgreement,
+	"negotiation-not-finalized": ErrInvalidAgreement,
 }
 
 // transferServiceStatusFallback: if transfer-process-service's error body

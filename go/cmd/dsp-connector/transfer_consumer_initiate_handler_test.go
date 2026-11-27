@@ -14,8 +14,11 @@ import (
 const (
 	transferConsumerFixtureNegotiationId = "urn:dynamos:negotiation:consumer:VU:fixture-1"
 	transferConsumerFixtureProviderPid   = "urn:example:negotiation:provider:1"
-	transferConsumerFixtureRemote        = "urn:dynamos:party:UVA"
-	transferConsumerFixtureEndpoint      = "http://uva.example.com/api/v1"
+	// The identity that started the negotiation (stored as its
+	// RemoteParticipant), and so the only caller that may start a
+	// transfer under it.
+	transferConsumerFixtureRemote   = "did:web:localhost%3A9999"
+	transferConsumerFixtureEndpoint = "http://uva.example.com/api/v1"
 )
 
 // startFixtureConsumerNegotiationForTransfer stands in for negotiation-service's
@@ -87,7 +90,7 @@ func TestTransferConsumerInitiateHandler_Success(t *testing.T) {
 	received := startFixtureConsumerTransferCollectionService(t)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate", bytes.NewBufferString(transferInitiateBody()))
-	req.Header.Set("Authorization", testAuthHeader("did:web:localhost%3A9999"))
+	req.Header.Set("Authorization", testAuthHeader(transferConsumerFixtureRemote))
 	rec := httptest.NewRecorder()
 
 	transferConsumerInitiateHandler(rec, req)
@@ -97,14 +100,36 @@ func TestTransferConsumerInitiateHandler_Success(t *testing.T) {
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &ack))
 	assert.Equal(t, "REQUESTED", ack.State)
 
-	// agreementId must be the negotiation's own providerPid (dsp-connector's
-	// established validateAgreementId convention), and remoteParticipant/
-	// providerEndpoint must come from the stored negotiation, never from
-	// the initiate caller's own DAT.
-	assert.Equal(t, transferConsumerFixtureProviderPid, (*received)["agreementId"])
-	assert.Equal(t, transferConsumerFixtureRemote, (*received)["remoteParticipant"])
-	assert.Equal(t, transferConsumerFixtureEndpoint, (*received)["providerEndpoint"])
+	// transfer-process-service reads the remote Provider and the
+	// agreementId from the stored negotiation itself, so the connector
+	// sends only the negotiation's id.
+	assert.Equal(t, transferConsumerFixtureNegotiationId, (*received)["negotiationId"])
+	assert.NotContains(t, *received, "providerEndpoint")
+	assert.NotContains(t, *received, "remoteParticipant")
+	assert.NotContains(t, *received, "agreementId")
 	assert.Equal(t, "dynamos:computeToData", (*received)["format"])
+}
+
+// TestTransferConsumerInitiateHandler_NotOwner checks that a participant
+// with a valid DAT cannot start a transfer under a negotiation that another
+// identity started. The answer is the same as for an unknown negotiation,
+// and transfer-process-service gets no call.
+func TestTransferConsumerInitiateHandler_NotOwner(t *testing.T) {
+	startFixtureConsumerNegotiationForTransfer(t, "FINALIZED", transferConsumerFixtureEndpoint, transferConsumerFixtureProviderPid)
+	received := startFixtureConsumerTransferCollectionService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate", bytes.NewBufferString(transferInitiateBody()))
+	req.Header.Set("Authorization", testAuthHeader("did:web:someone-else.example"))
+	rec := httptest.NewRecorder()
+
+	transferConsumerInitiateHandler(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	var te transferError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &te))
+	assert.Equal(t, "invalid-negotiation", te.Code)
+	assert.Equal(t, "negotiationId does not name a known Consumer-role negotiation", te.Reason[0])
+	assert.Nil(t, *received, "transfer-process-service must not be called")
 }
 
 func TestTransferConsumerInitiateHandler_MissingAuthorization(t *testing.T) {
@@ -122,7 +147,7 @@ func TestTransferConsumerInitiateHandler_MissingAuthorization(t *testing.T) {
 func TestTransferConsumerInitiateHandler_MissingFormat(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate",
 		bytes.NewBufferString(`{"negotiationId":"`+transferConsumerFixtureNegotiationId+`"}`))
-	req.Header.Set("Authorization", testAuthHeader("did:web:localhost%3A9999"))
+	req.Header.Set("Authorization", testAuthHeader(transferConsumerFixtureRemote))
 	rec := httptest.NewRecorder()
 
 	transferConsumerInitiateHandler(rec, req)
@@ -137,7 +162,7 @@ func TestTransferConsumerInitiateHandler_NegotiationNotFinalized(t *testing.T) {
 	startFixtureConsumerNegotiationForTransfer(t, "AGREED", transferConsumerFixtureEndpoint, transferConsumerFixtureProviderPid)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate", bytes.NewBufferString(transferInitiateBody()))
-	req.Header.Set("Authorization", testAuthHeader("did:web:localhost%3A9999"))
+	req.Header.Set("Authorization", testAuthHeader(transferConsumerFixtureRemote))
 	rec := httptest.NewRecorder()
 
 	transferConsumerInitiateHandler(rec, req)
@@ -153,7 +178,7 @@ func TestTransferConsumerInitiateHandler_UnknownNegotiation(t *testing.T) {
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate",
 		bytes.NewBufferString(`{"negotiationId":"urn:dynamos:negotiation:consumer:VU:does-not-exist","format":"dynamos:computeToData"}`))
-	req.Header.Set("Authorization", testAuthHeader("did:web:localhost%3A9999"))
+	req.Header.Set("Authorization", testAuthHeader(transferConsumerFixtureRemote))
 	rec := httptest.NewRecorder()
 
 	transferConsumerInitiateHandler(rec, req)
@@ -186,7 +211,7 @@ func TestTransferConsumerInitiateHandler_ProviderRejects(t *testing.T) {
 	transferServiceURL = ts.URL
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate", bytes.NewBufferString(transferInitiateBody()))
-	req.Header.Set("Authorization", testAuthHeader("did:web:localhost%3A9999"))
+	req.Header.Set("Authorization", testAuthHeader(transferConsumerFixtureRemote))
 	rec := httptest.NewRecorder()
 
 	transferConsumerInitiateHandler(rec, req)

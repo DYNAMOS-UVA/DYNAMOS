@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/dsp"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/etcd"
 	clientv3 "go.etcd.io/etcd/client/v3"
 )
@@ -39,16 +40,16 @@ func NewStore(etcdClient *clientv3.Client) *Store {
 // structural, not just "IDs happen not to collide".
 func negotiationKey(kind Kind, id string) string {
 	if kind == KindConsumer {
-		return fmt.Sprintf("/dsp/negotiations/consumer/%s", id)
+		return dsp.ConsumerNegotiationKey(id)
 	}
-	return fmt.Sprintf("/dsp/negotiations/%s", id)
+	return dsp.ProviderNegotiationKey(id)
 }
 
 // agreementIndexKey is a secondary index, providerPid keyed by the real
 // Agreement's own "@id" - see SaveAgreementIndex's own doc comment for why
 // this exists.
 func agreementIndexKey(agreementID string) string {
-	return fmt.Sprintf("/dsp/negotiations/by-agreement-id/%s", agreementID)
+	return dsp.AgreementIndexKey(agreementID)
 }
 
 // clone deep-copies n, including the Offer/Agreement byte slices - the cache

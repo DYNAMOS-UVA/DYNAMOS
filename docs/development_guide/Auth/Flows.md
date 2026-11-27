@@ -56,6 +56,7 @@ sequenceDiagram
     D->>D: mint service token (TOKEN_ISSUER_*)
     D->>T: create transfer (internal API)<br/>Authorization: Bearer <service token>
     T->>T: verify service token (AUTH_*)
+    T->>T: check agreement again (etcd): FINALIZED, same steward, same participant
     T->>T: mint participant token (TOKEN_ISSUER_*)
     T->>G: POST /api/v1/requestApproval<br/>Authorization: Bearer <participant token>
     Note over G: then the same steps as flow 1

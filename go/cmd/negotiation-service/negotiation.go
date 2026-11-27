@@ -7,6 +7,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/dsp"
 	"github.com/google/uuid"
 )
 
@@ -20,7 +21,7 @@ const (
 	StateAccepted   State = "ACCEPTED"
 	StateAgreed     State = "AGREED"
 	StateVerified   State = "VERIFIED"
-	StateFinalized  State = "FINALIZED"
+	StateFinalized  State = dsp.NegotiationFinalized
 	StateTerminated State = "TERMINATED"
 )
 
@@ -38,8 +39,8 @@ var (
 type Kind string
 
 const (
-	KindProvider Kind = "Provider"
-	KindConsumer Kind = "Consumer"
+	KindProvider Kind = dsp.NegotiationKindProvider
+	KindConsumer Kind = dsp.NegotiationKindConsumer
 )
 
 // Negotiation is negotiation-service's own etcd schema, own key namespace
