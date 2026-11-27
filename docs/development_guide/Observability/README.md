@@ -34,7 +34,7 @@ Alternatively, you can port-forward the Jaeger UI to view the logs, as explained
 Some other processes that can be accessed are:
 
 ### RabbitMQ
-Go to http://localhost:30000/ and login with "guest" as username and password. Here you can view queues and other things related to RabbitMQ.
+Go to http://localhost:30000/ and log in as `dynamos-admin`. Get the password with `./dynamos-dev.sh tokens` (`DYNAMOS_RABBITMQ_ADMIN_PASSWORD`). Here you can view queues and other things related to RabbitMQ.
 
 ### Etcd
 Examples of useful commands (replace endpoints when necessary)

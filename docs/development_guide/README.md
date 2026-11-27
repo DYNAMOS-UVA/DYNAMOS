@@ -7,5 +7,6 @@ This folder contains all of the documentation.
 - [Building](./Building/README.md)
 - [Develop](./Develop/README.md)
 - [Observability](./Observability/README.md)
+- [Authentication](./Auth/README.md)
 
 
