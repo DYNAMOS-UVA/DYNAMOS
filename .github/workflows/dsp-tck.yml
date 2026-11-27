@@ -63,13 +63,33 @@ jobs:
           go run cmd/dsp-connector/tck/seed_cn_datasets.go
           go run cmd/dsp-connector/tck/seed_tp_negotiation.go
 
+      # dsp-connector signs a service token for each internal API call, and
+      # transfer-process-service accepts only these tokens. The key pair
+      # exists only for this run. Same settings as the Helm charts.
+      - name: Make internal auth key
+        run: |
+          mkdir -m 700 "$RUNNER_TEMP/auth"
+          openssl genpkey -algorithm ed25519 -out "$RUNNER_TEMP/auth/dsp-connector.key.pem"
+          openssl pkey -in "$RUNNER_TEMP/auth/dsp-connector.key.pem" -pubout -out "$RUNNER_TEMP/auth/dsp-connector.pub.pem"
+
       - name: Start catalog-service, negotiation-service, transfer-process-service, dsp-connector
         working-directory: go
+        env:
+          AUTH_KEYS: ${{ runner.temp }}/auth
         run: |
           DATA_STEWARD_NAME=VU nohup go run -tags local ./cmd/catalog-service > /tmp/catalog-service.log 2>&1 &
           DATA_STEWARD_NAME=VU CONSUMER_AUTO_NEGOTIATE=false nohup go run -tags local ./cmd/negotiation-service > /tmp/negotiation-service.log 2>&1 &
-          DATA_STEWARD_NAME=VU nohup go run -tags local ./cmd/transfer-process-service > /tmp/transfer-process-service.log 2>&1 &
-          DATA_STEWARD_NAME=VU nohup go run -tags local ./cmd/dsp-connector > /tmp/dsp-connector.log 2>&1 &
+          DATA_STEWARD_NAME=VU \
+            AUTH_PROVIDERS=jwt \
+            AUTH_JWT_ISSUER=dynamos-dsp-connector \
+            AUTH_JWT_AUDIENCE=transfer-process-service \
+            AUTH_JWT_PUBLIC_KEY_FILES="$AUTH_KEYS/dsp-connector.pub.pem" \
+            nohup go run -tags local ./cmd/transfer-process-service > /tmp/transfer-process-service.log 2>&1 &
+          DATA_STEWARD_NAME=VU \
+            TOKEN_ISSUER_PROVIDER=jwt \
+            TOKEN_ISSUER_JWT_ISSUER=dynamos-dsp-connector \
+            TOKEN_ISSUER_JWT_PRIVATE_KEY_FILE="$AUTH_KEYS/dsp-connector.key.pem" \
+            nohup go run -tags local ./cmd/dsp-connector > /tmp/dsp-connector.log 2>&1 &
           pids=()
           for port in 8091 8092 8093 8090; do
             (

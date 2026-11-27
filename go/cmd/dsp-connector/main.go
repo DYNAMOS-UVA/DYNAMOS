@@ -44,6 +44,8 @@ func main() {
 		connectorBaseURL = v
 	}
 
+	configureInternalAuth()
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)
 	// DSP version/metadata discovery endpoint - spec-required, unversioned,

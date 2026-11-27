@@ -8,6 +8,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/auth/jwtauth"
 	"github.com/golang-jwt/jwt/v5"
 )
 
@@ -23,6 +24,10 @@ import (
 
 var testFixtureKey *ecdsa.PrivateKey
 
+const testInternalIssuerName = "dynamos-dsp-connector"
+
+var testInternalIssuer *jwtauth.Issuer
+
 func TestMain(m *testing.M) {
 	var err error
 	testFixtureKey, err = ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
@@ -32,6 +37,16 @@ func TestMain(m *testing.M) {
 	datResolver = func(did string) (crypto.PublicKey, error) {
 		return &testFixtureKey.PublicKey, nil
 	}
+	// The internal clients need an issuer, as a configured deployment has.
+	internalKey, err := jwtauth.GenerateKey()
+	if err != nil {
+		panic(err)
+	}
+	testInternalIssuer, err = jwtauth.NewIssuer(testInternalIssuerName, internalKey)
+	if err != nil {
+		panic(err)
+	}
+	internalTokenIssuer = testInternalIssuer
 	os.Exit(m.Run())
 }
 

@@ -13,3 +13,13 @@ transferServiceURL:
   uva: "http://transfer-process-service-uva.transfer-process-service.svc.cluster.local:8080"
   vu: "http://transfer-process-service-vu.transfer-process-service.svc.cluster.local:8080"
   surf: "http://transfer-process-service-surf.transfer-process-service.svc.cluster.local:8080"
+
+# Authentication (see templates/_auth.tpl and scripts/auth-secrets.sh).
+# Service tokens this connector sends to the internal APIs of the DSP
+# services. transfer-process-service trusts dsp-connector.pub.pem.
+auth:
+  secretName: dynamos-auth
+  env:
+    TOKEN_ISSUER_PROVIDER: jwt
+    TOKEN_ISSUER_JWT_ISSUER: dynamos-dsp-connector
+    TOKEN_ISSUER_JWT_PRIVATE_KEY_FILE: /etc/dynamos/auth/dsp-connector.key.pem

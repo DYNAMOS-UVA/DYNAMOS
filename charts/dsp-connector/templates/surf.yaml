@@ -34,6 +34,11 @@ spec:
         - name: DID_WEB_SCHEME
           value: {{ .Values.didWebScheme | quote }}
         {{- end }}
+        {{- include "dynamos.authEnv" . | trim | nindent 8 }}
+        volumeMounts:
+        {{- include "dynamos.authVolumeMount" . | nindent 8 }}
+      volumes:
+      {{- include "dynamos.authVolume" . | nindent 6 }}
 
 ---
 

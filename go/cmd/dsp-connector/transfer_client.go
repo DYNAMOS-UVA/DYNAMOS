@@ -7,7 +7,8 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"time"
+
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 )
 
 // ErrTransferNotFound and ErrTransferInvalidTransition are sentinels.
@@ -70,7 +71,9 @@ func checkTransferOwnership(t *transferRecord, participant string) error {
 	return nil
 }
 
-var transferServiceClient = &http.Client{Timeout: 5 * time.Second}
+// transferServiceClient sends a service token with each call (see
+// internal_auth.go). transfer-process-service refuses calls without one.
+var transferServiceClient = internalServiceClient(func() string { return transferServiceAudience }, api.TransferServiceScope)
 
 // transferServiceErrorCodes maps transfer-process-service's internal-API
 // error codes (go/cmd/transfer-process-service/transfer_handler.go) to this

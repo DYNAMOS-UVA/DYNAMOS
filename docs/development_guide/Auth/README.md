@@ -50,7 +50,7 @@ This folder describes how DYNAMOS services authenticate their callers and each o
 
 ## Known limits
 
-- The internal APIs of the DSP services (`/internal/v1/...` on transfer-process-service, negotiation-service and catalog-service) do not authenticate their callers yet. A separate issue tracks this work. Do not expose these services outside the cluster.
+- The internal APIs of negotiation-service and catalog-service (`/internal/v1/...`) do not authenticate their callers yet. A separate issue tracks this work. Do not expose these services outside the cluster. The internal API of transfer-process-service accepts only service tokens from dsp-connector.
 - Bearer tokens are not bound to the sender. A job token stays valid until it expires (5 minutes).
 - There is no token revocation. Use short lifetimes and key rotation.
 - The services read their keys at startup. A key rotation restarts pods.

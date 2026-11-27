@@ -53,11 +53,26 @@ sequenceDiagram
     C->>D: Transfer Request<br/>Authorization: <DAT>
     D->>D: verify DAT (DID signature), participant = DID
     D->>D: agreement is FINALIZED and owned by the participant
-    D->>T: create transfer (internal API)
+    D->>D: mint service token (TOKEN_ISSUER_*)
+    D->>T: create transfer (internal API)<br/>Authorization: Bearer <service token>
+    T->>T: verify service token (AUTH_*)
     T->>T: mint participant token (TOKEN_ISSUER_*)
     T->>G: POST /api/v1/requestApproval<br/>Authorization: Bearer <participant token>
     Note over G: then the same steps as flow 1
 ```
+
+dsp-connector mints a new service token for each call to the internal API of transfer-process-service (`go/cmd/dsp-connector/internal_auth.go`):
+
+| Claim | Value |
+|-------|-------|
+| `iss` | `dynamos-dsp-connector` |
+| `aud` | `transfer-process-service` (`TRANSFER_SERVICE_AUDIENCE` changes it) |
+| `sub` | `dsp-connector` |
+| `kind` | `service` |
+| `scope` | `transfer-process-service:internal` |
+| `exp` | 1 minute after issue |
+
+transfer-process-service accepts a request on `/internal/v1/...` only with this token: kind `service` and the scope `transfer-process-service:internal` (`go/cmd/transfer-process-service/internal_auth.go`). It answers 401 without a valid token and 403 for a token of another kind or without the scope. `/health` does not need a token.
 
 transfer-process-service mints this token (`go/cmd/transfer-process-service/gateway_auth.go`):
 
@@ -72,7 +87,7 @@ transfer-process-service mints this token (`go/cmd/transfer-process-service/gate
 
 api-gateway accepts a token of kind `service` or `participant` only when it has the scope `gateway:requestApproval`.
 
-> The internal API between dsp-connector and transfer-process-service does not authenticate its caller yet. See the known limits in the [README](./README.md#known-limits).
+> The internal APIs of negotiation-service and catalog-service do not authenticate their callers yet. See the known limits in the [README](./README.md#known-limits).
 
 ## 3. Orchestrator API (operators and tools)
 

@@ -61,14 +61,24 @@ func main() {
 	}
 
 	configureGatewayAuth()
+	internalVerifier := mustBuildInternalVerifier()
 
 	etcdClient = etcd.GetEtcdClient(etcdEndpoints)
 	defer etcdClient.Close()
 
 	store = NewStore(etcdClient)
 
-	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthHandler)
+	handler := newServer(internalVerifier)
+
+	logger.Sugar().Infow("Starting transfer-process-service http server", "port", port, "party", party)
+	if err := http.ListenAndServe(port, handler); err != nil {
+		logger.Sugar().Fatalf("Error starting HTTP server: %v", err)
+	}
+}
+
+// registerInternalRoutes adds the internal API routes to mux. newServer
+// puts all of them behind internalAuth.
+func registerInternalRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("/internal/v1/transfers", transfersCollectionHandler)
 	mux.HandleFunc("/internal/v1/transfers/{id}", transferHandler)
 	// Method-qualified ("POST /...", not "/..."): an unqualified pattern
@@ -98,9 +108,4 @@ func main() {
 	mux.HandleFunc("/internal/v1/transfers/consumer/{id}/completion", transferConsumerCompletionHandler)
 	mux.HandleFunc("/internal/v1/transfers/consumer/{id}/suspension", transferConsumerSuspensionHandler)
 	mux.HandleFunc("/internal/v1/transfers/consumer/{id}/termination", transferConsumerTerminationHandler)
-
-	logger.Sugar().Infow("Starting transfer-process-service http server", "port", port, "party", party)
-	if err := http.ListenAndServe(port, mux); err != nil {
-		logger.Sugar().Fatalf("Error starting HTTP server: %v", err)
-	}
 }

@@ -76,7 +76,9 @@ The provider works only in a binary built with `-tags authdev`. In other builds 
 | orchestrator | `TOKEN_ISSUER` | Job tokens for the agents | `jwt`, key `/etc/dynamos/auth/orchestrator.key.pem` |
 | api-gateway | `AUTH` | Callers of the public API | `jwt` for transfer-process-service tokens. Add `oidc` for end users. Tilt adds `static-dev`. |
 | agent | `AUTH` | Job tokens from the orchestrator | `jwt`, key `/etc/dynamos/auth/orchestrator.pub.pem`. The audience defaults to `DATA_STEWARD_NAME`. |
+| transfer-process-service | `AUTH` | Callers of the internal API (dsp-connector only) | `jwt`, key `/etc/dynamos/auth/dsp-connector.pub.pem`, audience `transfer-process-service` |
 | transfer-process-service | `TOKEN_ISSUER` | Participant tokens for api-gateway | `jwt`, key `/etc/dynamos/auth/transfer-process-service.key.pem` |
+| dsp-connector | `TOKEN_ISSUER` | Service tokens for the internal API of transfer-process-service | `jwt`, key `/etc/dynamos/auth/dsp-connector.key.pem` |
 
 Other variables:
 
@@ -85,13 +87,14 @@ Other variables:
 | `ORCHESTRATOR_READ_SCOPE` | orchestrator | Scope for reads. Default `orchestrator:read`. |
 | `ORCHESTRATOR_WRITE_SCOPE` | orchestrator | Scope for writes. Default `orchestrator:write`. |
 | `GATEWAY_TOKEN_AUDIENCE` | transfer-process-service | `aud` of its tokens. Default `api-gateway`. |
+| `TRANSFER_SERVICE_AUDIENCE` | dsp-connector | `aud` of its tokens for transfer-process-service. Default `transfer-process-service`. It must be in `AUTH_JWT_AUDIENCE` of transfer-process-service. |
 | `CORS_ALLOWED_ORIGINS` | orchestrator, api-gateway, agent | Comma-separated browser origins (`scheme://host[:port]`). Empty: no CORS headers. |
 | `AMQ_USER`, `AMQ_PASSWORD` | sidecar | The RabbitMQ user of the sidecar. |
 | `AMQ_VERIFY_SENDER` | sidecar | `false` turns the sender check off. Use it only with a local broker where all services share one user. |
 
 ## Helm values
 
-The charts `orchestrator`, `api-gateway`, `agents`, `thirdparty` and `transfer-process-service` have the same auth values (`templates/_auth.tpl`):
+The charts `orchestrator`, `api-gateway`, `agents`, `thirdparty`, `transfer-process-service` and `dsp-connector` have the same auth values (`templates/_auth.tpl`):
 
 ```yaml
 auth:
@@ -109,7 +112,7 @@ auth:
 corsAllowedOrigins: ""
 ```
 
-When `devToken.enabled` is `true`, the chart adds `static-dev` to `AUTH_PROVIDERS` and reads the token from the Secret. The `_auth.tpl` file is the same in all five charts. Change all copies together.
+When `devToken.enabled` is `true`, the chart adds `static-dev` to `AUTH_PROVIDERS` and reads the token from the Secret. The `_auth.tpl` file is the same in all six charts. Change all copies together.
 
 ## Production example
 

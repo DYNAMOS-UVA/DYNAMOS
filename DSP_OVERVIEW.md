@@ -223,7 +223,7 @@ The DSP spec separates two layers: the control plane and the data plane. The con
 
 **Start message asymmetry.** The Provider sends the first `REQUESTED → STARTED` message. `dsp-connector` sends this message outbound to the Consumer; no inbound endpoint exists for it. Only the resume case, `SUSPENDED → STARTED`, arrives as an inbound message from the Consumer, at `POST /transfers/{providerPid}/start`.
 
-**Internal API.** `transfer-process-service` exposes endpoints under `/internal/v1/transfers/...`, plus a parallel set under `/internal/v1/transfers/consumer/...`. The endpoints cover create, read, start, completion, suspension, and termination.
+**Internal API.** `transfer-process-service` exposes endpoints under `/internal/v1/transfers/...`, plus a parallel set under `/internal/v1/transfers/consumer/...`. The endpoints cover create, read, start, completion, suspension, and termination. Each request must have a service token from `dsp-connector` (kind `service`, scope `transfer-process-service:internal`). `/health` does not need a token. See `docs/development_guide/Auth/Flows.md`.
 
 **Job-execution wiring.** `transfer-process-service` connects a DSP transfer to a DYNAMOS job in these steps:
 
@@ -341,7 +341,7 @@ The job `dsp-tck-validation` has a 12-minute time limit and runs these steps in 
 1. Check out the repository. Set up Go.
 2. Start a standalone etcd container, using the `quay.io/coreos/etcd` image. The three DSP services under test need only a reachable etcd instance, not a full Kubernetes cluster.
 3. Seed etcd with the CI baseline data, the CN test datasets, and the TP fixture negotiation.
-4. Start `catalog-service`, `negotiation-service` (with `CONSUMER_AUTO_NEGOTIATE=false`), `transfer-process-service`, and `dsp-connector`, using `go run -tags local`. Poll each service's `/health` endpoint until it responds.
+4. Make an Ed25519 key pair for this run. Start `catalog-service`, `negotiation-service` (with `CONSUMER_AUTO_NEGOTIATE=false`), `transfer-process-service`, and `dsp-connector`, using `go run -tags local`. `dsp-connector` gets the private key and signs a service token for each call to `transfer-process-service`. `transfer-process-service` gets the public key and accepts only these tokens. Poll each service's `/health` endpoint until it responds.
 5. Serve the fixture DID document over HTTP.
 6. Start both auto-responder programs, `tck_auto_responder.go` and `tck_auto_responder_consumer.go`, in the background.
 7. Run the TCK image, filtered to the `dsp-cat,dsp-cn` tags, with a 5-minute time limit. Save the output to a log file.

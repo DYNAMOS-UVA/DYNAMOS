@@ -10,6 +10,7 @@ The files are in `.dev/auth` (git ignores this directory). `AUTH_KEYS_DIR` chang
 |------|-----|
 | `orchestrator.key.pem`, `orchestrator.pub.pem` | The orchestrator signs job tokens. The agents verify them. |
 | `transfer-process-service.key.pem`, `.pub.pem` | transfer-process-service signs participant tokens. api-gateway verifies them. |
+| `dsp-connector.key.pem`, `.pub.pem` | dsp-connector signs service tokens for the internal API of transfer-process-service. transfer-process-service verifies them. |
 | `dev-user-token`, `dev-operator-token` | Tokens for the `static-dev` provider (Tilt only). |
 | `rabbitmq/<user>.password` | One RabbitMQ password for each user. |
 
@@ -19,8 +20,9 @@ The Secret `dynamos-auth` (mounted at `/etc/dynamos/auth`):
 |-----------|------|
 | `orchestrator` | `orchestrator.key.pem`, `dev-operator-token` |
 | `uva`, `vu`, `surf` | `orchestrator.pub.pem` |
-| `transfer-process-service` | `transfer-process-service.key.pem` |
+| `transfer-process-service` | `transfer-process-service.key.pem`, `dsp-connector.pub.pem` |
 | `api-gateway` | `transfer-process-service.pub.pem`, `dev-user-token` |
+| `dsp-connector` | `dsp-connector.key.pem` |
 
 The Secret `dynamos-rabbitmq` (read by the sidecars as `AMQ_PASSWORD`):
 
@@ -83,11 +85,34 @@ If `rotate` stops before it is complete, run it again. It continues from the ste
 |-----|-----------|--------|
 | `orchestrator` | `uva`, `vu`, `surf` | `orchestrator` |
 | `transfer-process-service` | `api-gateway` | the three transfer-process-service deployments |
+| `dsp-connector` | the three transfer-process-service deployments | the three dsp-connector deployments |
 
 Dev tokens and RabbitMQ passwords have no overlap:
 
 - `rotate dev-user-token` (or `dev-operator-token`) replaces the token and restarts the service that accepts it.
 - `rotate rabbitmq` replaces all RabbitMQ passwords and restarts all services with a sidecar. Open connections stay up. Running jobs keep their connection; new jobs use the new password.
+
+## Run the DSP services without Kubernetes
+
+transfer-process-service does not start without `AUTH_PROVIDERS`, and dsp-connector does not start without `TOKEN_ISSUER_PROVIDER`. This is also true for `go run -tags local`. To run them on your computer (for example for the DSP TCK), make a key pair and give each service its half:
+
+```bash
+cd go
+go run ./cmd/authtool keygen -name dsp-connector -out ../.dev/auth-local
+
+AUTH_PROVIDERS=jwt \
+AUTH_JWT_ISSUER=dynamos-dsp-connector \
+AUTH_JWT_AUDIENCE=transfer-process-service \
+AUTH_JWT_PUBLIC_KEY_FILES=../.dev/auth-local/dsp-connector.pub.pem \
+DATA_STEWARD_NAME=VU go run -tags local ./cmd/transfer-process-service
+
+TOKEN_ISSUER_PROVIDER=jwt \
+TOKEN_ISSUER_JWT_ISSUER=dynamos-dsp-connector \
+TOKEN_ISSUER_JWT_PRIVATE_KEY_FILE=../.dev/auth-local/dsp-connector.key.pem \
+DATA_STEWARD_NAME=VU go run -tags local ./cmd/dsp-connector
+```
+
+The DSP TCK workflow (`.github/workflows/dsp-tck.yml`) does the same with a key pair that it makes for each run.
 
 ## RabbitMQ users
 
@@ -119,6 +144,8 @@ To open the management UI, run `./dynamos-dev.sh tokens`, then log in as `dynamo
 | `staticdev: provider is disabled in this build` | The image was built without `-tags authdev`. Use the Tilt image, or remove `static-dev` from the configuration. |
 | A pod stays in `ContainerCreating` with `secret "dynamos-auth" not found` | Run `scripts/auth-secrets.sh` (or `./dynamos-dev.sh up`). |
 | `401` from api-gateway or the orchestrator | The token is missing, expired, from another issuer, or for another audience. The service log has the reason (never the token). |
+| dsp-connector: `transfer-process-service returned 401` | transfer-process-service does not trust the key of dsp-connector. Run `scripts/auth-secrets.sh`, then restart the transfer-process-service pods. |
+| `403` from transfer-process-service | The token is not a service token, or it does not have the scope `transfer-process-service:internal`. Only dsp-connector can call the internal API. |
 | `403` from the orchestrator | The token has no `orchestrator:write` scope (or no `orchestrator:read` scope for a read). |
 | `403` from an agent | The job token is for another job or user. |
 | Sidecar: `Exception (403) Reason: "username or password not allowed"` | The pod has an old RabbitMQ password or user. Run `scripts/auth-secrets.sh`, then restart the pod. |
