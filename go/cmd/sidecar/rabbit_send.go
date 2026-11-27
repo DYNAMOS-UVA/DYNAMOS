@@ -91,8 +91,10 @@ func send(ctx context.Context, message amqp.Publishing, target string, s *server
 		// Log before sending message
 		logger.Sugar().Infow("Sending message: ", "My routingKey", s.routingKey, "exchangeName", exchangeName, "target", target)
 
-		// Create a context with a timeout
-		timeoutCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
+		// send runs in its own goroutine, after the gRPC call that started
+		// it has returned and cancelled ctx. Keep the trace values, drop
+		// the cancellation.
+		timeoutCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 8*time.Second)
 		defer cancel()
 
 		err := s.publish(timeoutCtx, target, message)
@@ -103,8 +105,10 @@ func send(ctx context.Context, message amqp.Publishing, target string, s *server
 			logger.Sugar().Infof("No route to job yet: %v", target)
 			// This will trigger a retry
 			return err
-		case errors.Is(err, errRefused):
-			logger.Sugar().Errorf("Message to %v refused: %v", target, err)
+		case errors.Is(err, errRefused), errors.Is(err, errUnconfirmed):
+			// Refused: a retry does not help. Unconfirmed: the message
+			// can be delivered already, and a retry would duplicate it.
+			logger.Sugar().Errorf("Message to %v failed: %v", target, err)
 			return bo.Permanent(err)
 		default:
 			logger.Sugar().Debugf("Publish error: %v", err)
@@ -137,6 +141,9 @@ var (
 	// errRefused: the broker refused the message, for example because this
 	// user may not publish to the routing key. A retry does not help.
 	errRefused = errors.New("broker refused the message")
+	// errUnconfirmed: the message was published, but no answer from the
+	// broker came in time. It can be delivered already, so do not retry.
+	errUnconfirmed = errors.New("no broker confirmation for the message")
 )
 
 // publish sends msg to routing key target and waits until the broker
@@ -190,7 +197,7 @@ func (s *serverInstance) publish(ctx context.Context, target string, msg amqp.Pu
 		}
 		return fmt.Errorf("%w: %s", errRefused, e.Reason)
 	case <-ctx.Done():
-		return ctx.Err()
+		return fmt.Errorf("%w: %v", errUnconfirmed, ctx.Err())
 	}
 }
 

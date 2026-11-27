@@ -56,7 +56,7 @@ func deployJob(ctx context.Context, msChain []mschain.MicroserviceMetadata, jobN
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      newJobName,
 			Namespace: dataStewardName,
-			Labels:    map[string]string{"app": dataStewardName, "jobName": jobName},
+			Labels:    jobLabels(dataStewardName, jobName),
 		},
 		Spec: batchv1.JobSpec{
 			ActiveDeadlineSeconds:   &activeDeadlineSeconds,
@@ -64,7 +64,7 @@ func deployJob(ctx context.Context, msChain []mschain.MicroserviceMetadata, jobN
 			BackoffLimit:            &backoffLimit,
 			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
-					Labels: map[string]string{"app": dataStewardName},
+					Labels: jobLabels(dataStewardName, jobName),
 				},
 				Spec: v1.PodSpec{
 					Containers:    []v1.Container{},
@@ -143,6 +143,14 @@ func deployJob(ctx context.Context, msChain []mschain.MicroserviceMetadata, jobN
 	}
 
 	return createdJob, nil
+}
+
+// jobLabels are the labels of a job and its pods. They must not include
+// "app": <steward>, the selector of the agent's Service. With that label a
+// running job pod became an endpoint of the agent Service, and api-gateway
+// requests to the agent went to the job pod (502 Bad Gateway).
+func jobLabels(dataStewardName, jobName string) map[string]string {
+	return map[string]string{"jobOf": dataStewardName, "jobName": jobName}
 }
 
 // rabbitSecretName is the Secret with the RabbitMQ passwords of this
