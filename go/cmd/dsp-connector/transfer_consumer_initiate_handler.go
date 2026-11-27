@@ -45,6 +45,11 @@ func transferConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) {
 		writeTransferError(w, http.StatusUnauthorized, "", "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
 		return
 	}
+	if !mayInitiate(caller) {
+		logger.Sugar().Infow("Transfer initiate denied: participant is not in CONSUMER_INITIATORS", "participant", caller)
+		writeTransferError(w, http.StatusForbidden, "", "", "forbidden", "This participant may not start transfers at this connector.")
+		return
+	}
 
 	var body transferConsumerInitiateBody
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
@@ -100,16 +105,13 @@ func transferConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// ownParticipant reuses the raw Authorization header this request
-	// itself carried, same as negotiationConsumerInitiateHandler's own
-	// fix (issue #93 live demo finding) - a real remote Provider
-	// DAT-verifies its inbound Authorization header, so a synthesized
-	// "urn:dynamos:party:X" label can never pass that check. n.ProviderPid
-	// (the agreementId below) was validated on the remote Provider's
-	// negotiation-service against n.Participant, which is this same real
-	// DID - the outbound transfer request has to assert the identical
-	// identity or validateAgreementId's ownership check fails there too.
-	ownParticipant := r.Header.Get("Authorization")
+	// ownParticipant is DYNAMOS's own identity on this transfer: the
+	// verified DID of the caller (one of CONSUMER_INITIATORS, and the owner
+	// of the negotiation). It is an identity, never the caller's token.
+	// transfer-process-service sends its own credential (PARTY_DAT or STS)
+	// on the outbound Transfer Request Message, so the remote Provider sees
+	// the same identity that negotiated the agreement.
+	ownParticipant := caller
 	callbackAddress := connectorBaseURL + apiVersion + "/callback"
 
 	t, err := createConsumerTransfer(body.NegotiationId, ownParticipant, body.Format, callbackAddress, body.DataAddress)

@@ -80,8 +80,8 @@ func sendConsumerTermination(n *Negotiation) error {
 	return postToProvider(n, "/negotiations/"+n.ProviderPid+"/termination", body)
 }
 
-// postToProvider POSTs body to n.ProviderEndpoint+path, authenticated as
-// n.Participant (DYNAMOS's own identity) - shared by sendAcceptedEvent and
+// postToProvider POSTs body to n.ProviderEndpoint+path, authenticated with
+// DYNAMOS's own credential (ownAuthorization) - shared by sendAcceptedEvent and
 // sendAgreementVerification, which only differ in path and message shape.
 // A non-2xx response is the only failure mode that matters here: unlike
 // sendContractRequest, the caller doesn't need anything out of the response
@@ -109,7 +109,9 @@ func postToProvider(n *Negotiation, path string, body []byte) error {
 			return fmt.Errorf("%w: building request: %w", ErrProviderRequestFailed, err)
 		}
 		req.Header.Set("Content-Type", "application/json")
-		req.Header.Set("Authorization", n.Participant)
+		if authHeader := ownAuthorization(n.RemoteParticipant); authHeader != "" {
+			req.Header.Set("Authorization", authHeader)
+		}
 
 		resp, err := client.Do(req)
 		if err != nil {

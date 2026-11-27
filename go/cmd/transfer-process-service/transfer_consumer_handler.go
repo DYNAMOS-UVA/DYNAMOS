@@ -17,9 +17,10 @@ type transferConsumerRequestBody struct {
 	// NegotiationId is the consumerPid of the FINALIZED Consumer-role
 	// negotiation this transfer runs under.
 	NegotiationId string `json:"negotiationId"`
-	// Participant is DYNAMOS's own identity, sent as the Authorization
-	// header on the outbound message (see TransferProcess.Participant's
-	// doc). dsp-connector takes it from the verified initiate request.
+	// Participant is DYNAMOS's own identity: the DID that dsp-connector
+	// verified on the initiate request. It is stored, so it must never be a
+	// token: the outbound message carries DYNAMOS's own credential (see
+	// ownAuthorization).
 	Participant     string          `json:"participant"`
 	Format          string          `json:"format"`
 	CallbackAddress string          `json:"callbackAddress"`
@@ -55,6 +56,10 @@ func transfersConsumerCollectionHandler(w http.ResponseWriter, r *http.Request) 
 		writeInternalError(w, http.StatusBadRequest, "missing-participant", "participant is required")
 		return
 	}
+	if looksLikeCredential(body.Participant) {
+		writeInternalError(w, http.StatusBadRequest, "invalid-participant", "participant must be an identity, not a token")
+		return
+	}
 	if body.Format == "" {
 		writeInternalError(w, http.StatusBadRequest, "missing-format", "format is required")
 		return
@@ -85,7 +90,7 @@ func transfersConsumerCollectionHandler(w http.ResponseWriter, r *http.Request) 
 	// Provider side.
 	t := newConsumerTransferProcess(party, body.Participant, n.RemoteParticipant, n.ProviderEndpoint, n.ProviderPid, body.Format, body.CallbackAddress, body.DataAddress)
 
-	providerPid, err := sendTransferRequest(n.ProviderEndpoint, body.Participant, t)
+	providerPid, err := sendTransferRequest(n.ProviderEndpoint, t)
 	if err != nil {
 		logger.Sugar().Errorw("outbound Transfer Request Message failed", "consumerPid", t.ConsumerPid, "providerEndpoint", n.ProviderEndpoint, "error", err)
 		writeInternalError(w, http.StatusBadGateway, "provider-request-failed", err.Error())

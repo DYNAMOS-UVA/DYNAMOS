@@ -57,11 +57,12 @@ type Negotiation struct {
 	ConsumerPid string `json:"consumerPid"`
 	Party       string `json:"party"`
 	// Participant is the other side's identity, captured at creation time -
-	// for a Provider-role negotiation, the external Consumer's identity
-	// (dsp-connector's Authorization-header value, see participantFromRequest
-	// in go/cmd/dsp-connector/catalog_handler.go); for a Consumer-role
-	// negotiation, DYNAMOS's own identity, sent as the Authorization header
-	// on the outbound Contract Request Message. negotiation-service never
+	// for a Provider-role negotiation, the external Consumer's DID
+	// (verified from its DAT, see participantFromRequest in
+	// go/cmd/dsp-connector/catalog_handler.go); for a Consumer-role
+	// negotiation, DYNAMOS's own DID. It is always an identity, never a
+	// token: outbound messages carry DYNAMOS's own credential
+	// (ownAuthorization in outbound_delivery.go). negotiation-service never
 	// interprets it - it's stored opaque purely so dsp-connector can check,
 	// on every later provider-endpoint call, that the caller is the same
 	// participant who opened this negotiation.

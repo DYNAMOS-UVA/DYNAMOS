@@ -62,18 +62,25 @@ sequenceDiagram
     Note over G: then the same steps as flow 1
 ```
 
-dsp-connector mints a new service token for each call to the internal API of transfer-process-service (`go/cmd/dsp-connector/internal_auth.go`):
+dsp-connector mints a new service token for each call to the internal API of transfer-process-service or negotiation-service (`go/cmd/dsp-connector/internal_auth.go`). Each service gets its own audience and scope, so a token for one service does not work at the other:
 
-| Claim | Value |
-|-------|-------|
-| `iss` | `dynamos-dsp-connector` |
-| `aud` | `transfer-process-service` (`TRANSFER_SERVICE_AUDIENCE` changes it) |
-| `sub` | `dsp-connector` |
-| `kind` | `service` |
-| `scope` | `transfer-process-service:internal` |
-| `exp` | 1 minute after issue |
+| Claim | transfer-process-service | negotiation-service |
+|-------|--------------------------|---------------------|
+| `iss` | `dynamos-dsp-connector` | `dynamos-dsp-connector` |
+| `aud` | `transfer-process-service` (`TRANSFER_SERVICE_AUDIENCE`) | `negotiation-service` (`NEGOTIATION_SERVICE_AUDIENCE`) |
+| `sub` | `dsp-connector` | `dsp-connector` |
+| `kind` | `service` | `service` |
+| `scope` | `transfer-process-service:internal` | `negotiation-service:internal` |
+| `exp` | 1 minute after issue | 1 minute after issue |
 
-transfer-process-service accepts a request on `/internal/v1/...` only with this token: kind `service` and the scope `transfer-process-service:internal` (`go/cmd/transfer-process-service/internal_auth.go`). It answers 401 without a valid token and 403 for a token of another kind or without the scope. `/health` does not need a token.
+The internal APIs use one rule (`go/pkg/auth/internalapi`). `/health` does not need a token. Every other path needs a valid token with the scope of the service and an allowed kind. The service answers 401 without a valid token and 403 for a token of another kind or without the scope.
+
+| Service | Allowed kinds | Callers |
+|---------|---------------|---------|
+| transfer-process-service | `service` | dsp-connector |
+| negotiation-service | `service`, `user` | dsp-connector, operators |
+
+A `participant` token never reaches an internal API, because these APIs trust their caller for the participant of a transfer or negotiation.
 
 transfer-process-service mints this token (`go/cmd/transfer-process-service/gateway_auth.go`):
 
@@ -88,7 +95,23 @@ transfer-process-service mints this token (`go/cmd/transfer-process-service/gate
 
 api-gateway accepts a token of kind `service` or `participant` only when it has the scope `gateway:requestApproval`.
 
-> The internal APIs of negotiation-service and catalog-service do not authenticate their callers yet. See the known limits in the [README](./README.md#known-limits).
+### Operators on negotiation-service
+
+On the Provider side, negotiation-service does not send the offer, the agreement or the `FINALIZED` event by itself. An operator sends them to the internal API (`/internal/v1/negotiations/{id}/offer`, `/agreement`, `/events`). `FINALIZED` also gives the participant access to data (the policy-enforcer relation), so these are admin actions.
+
+- In Tilt, use `$DYNAMOS_OPERATOR_TOKEN`. The negotiation-service chart accepts it (`static-dev`, scope `negotiation-service:internal`).
+- In production, add an identity provider to `AUTH_PROVIDERS` of negotiation-service (for example `oidc`), whose operator tokens have the scope `negotiation-service:internal`.
+- The DSP TCK workflow gives its auto-responders (which play the operator) a token signed with the key of the run.
+
+### Consumer role (DYNAMOS starts a negotiation or a transfer)
+
+`POST /api/v1/negotiations/initiate` and `POST /api/v1/transfers/initiate` on dsp-connector are not DSP messages. They make DYNAMOS start a negotiation or a transfer with a remote Provider, under its own identity.
+
+- The caller sends a DAT. dsp-connector verifies it, and the DID must be in `CONSUMER_INITIATORS`. When the list is empty (the default), both endpoints answer `403` to every caller.
+- `/transfers/initiate` also requires that the caller started the negotiation.
+- DYNAMOS stores the verified DID, never the caller's token. The outbound messages carry DYNAMOS's own credential: an STS token, else `PARTY_DAT`.
+
+> The internal API of catalog-service does not authenticate its callers yet. See the known limits in the [README](./README.md#known-limits).
 
 ## 3. Orchestrator API (operators and tools)
 

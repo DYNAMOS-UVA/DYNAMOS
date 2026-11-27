@@ -31,6 +31,10 @@ const internalTokenTTL = time.Minute
 // TRANSFER_SERVICE_AUDIENCE overrides it.
 var transferServiceAudience = "transfer-process-service"
 
+// negotiationServiceAudience is the "aud" negotiation-service expects.
+// NEGOTIATION_SERVICE_AUDIENCE overrides it.
+var negotiationServiceAudience = "negotiation-service"
+
 // internalTokenIssuer mints the tokens. configureInternalAuth sets it at
 // startup. Nil makes every internal call fail with errNoInternalIssuer.
 var internalTokenIssuer auth.Issuer
@@ -42,6 +46,9 @@ var errNoInternalIssuer = errors.New("no internal service token issuer configure
 func configureInternalAuth() {
 	if v := os.Getenv("TRANSFER_SERVICE_AUDIENCE"); v != "" {
 		transferServiceAudience = v
+	}
+	if v := os.Getenv("NEGOTIATION_SERVICE_AUDIENCE"); v != "" {
+		negotiationServiceAudience = v
 	}
 	iss, err := auth.IssuerFromEnv(internalTokenEnvPrefix)
 	if err != nil {

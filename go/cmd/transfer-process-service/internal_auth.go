@@ -1,11 +1,11 @@
 package main
 
 import (
-	"fmt"
 	"net/http"
 
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/api"
 	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/auth"
+	"github.com/DYNAMOS-UVA/DYNAMOS/pkg/auth/internalapi"
 	// jwtauth is registered by gateway_auth.go.
 )
 
@@ -35,41 +35,24 @@ func mustBuildInternalVerifier() auth.Verifier {
 	return v
 }
 
-// internalAuth lets a request through only with a valid service token that
-// has api.TransferServiceScope. The internal API trusts its caller for the
+// newServer returns the HTTP handler of the service: /health without
+// authentication, every other route only with a service token that has
+// api.TransferServiceScope. The internal API trusts its caller for the
 // participant of a transfer, so a user or participant token must not reach
 // it, even with the scope.
-func internalAuth(v auth.Verifier) func(http.Handler) http.Handler {
-	opts := []auth.MiddlewareOption{auth.WithRealm(internalAuthRealm), auth.WithErrorHandler(logInternalAuthFailure)}
-	authenticate := auth.Middleware(v, opts...)
-	authorize := auth.RequireScope([]string{api.TransferServiceScope}, opts...)
-	return func(next http.Handler) http.Handler {
-		serviceOnly := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			p, _ := auth.PrincipalFrom(r.Context())
-			if p.Kind != auth.KindService {
-				logInternalAuthFailure(w, r, fmt.Errorf("%w: %s token on the internal API", auth.ErrForbidden, p.Kind))
-				return
-			}
-			next.ServeHTTP(w, r)
-		})
-		return authenticate(authorize(serviceOnly))
-	}
-}
-
-func logInternalAuthFailure(w http.ResponseWriter, r *http.Request, err error) {
-	// err comes from pkg/auth and never contains the token.
-	logger.Sugar().Infow("internal API request rejected", "method", r.Method, "path", r.URL.Path, "status", auth.StatusCode(err), "reason", err.Error())
-	auth.DefaultErrorHandler(internalAuthRealm)(w, r, err)
-}
-
-// newServer returns the HTTP handler of the service: /health without
-// authentication, every other route behind internalAuth.
 func newServer(v auth.Verifier) http.Handler {
 	internal := http.NewServeMux()
 	registerInternalRoutes(internal)
+	return internalapi.Handler(internalapi.Config{
+		Verifier: v,
+		Scope:    api.TransferServiceScope,
+		Kinds:    []auth.Kind{auth.KindService},
+		Realm:    internalAuthRealm,
+		OnReject: logInternalAuthFailure,
+	}, healthHandler, internal)
+}
 
-	root := http.NewServeMux()
-	root.HandleFunc("/health", healthHandler)
-	root.Handle("/", internalAuth(v)(internal))
-	return root
+func logInternalAuthFailure(r *http.Request, err error) {
+	// err comes from pkg/auth and never contains the token.
+	logger.Sugar().Infow("internal API request rejected", "method", r.Method, "path", r.URL.Path, "status", auth.StatusCode(err), "reason", err.Error())
 }

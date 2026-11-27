@@ -31,6 +31,8 @@
 #   uva, vu, surf             orchestrator.pub.pem          agents verify job tokens
 #   transfer-process-service  transfer-process-service.key.pem  signs participant tokens
 #                             dsp-connector.pub.pem             verifies internal API callers
+#   negotiation-service       dsp-connector.pub.pem             verifies internal API callers
+#                             dev-operator-token                operator token (Tilt only)
 #   api-gateway               transfer-process-service.pub.pem
 #                             dev-user-token
 #   dsp-connector             dsp-connector.key.pem             signs internal service tokens
@@ -68,6 +70,11 @@ ROLLOUT_TIMEOUT="180s"
 
 SIGNING_KEYS=(orchestrator transfer-process-service dsp-connector)
 DEV_TOKENS=(dev-user-token dev-operator-token)
+NEGOTIATION_SERVICES=(
+    negotiation-service/negotiation-service-uva
+    negotiation-service/negotiation-service-vu
+    negotiation-service/negotiation-service-surf
+)
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
@@ -106,9 +113,10 @@ verifiers_of() {
         dsp-connector)
             echo "transfer-process-service/transfer-process-service-uva" \
                  "transfer-process-service/transfer-process-service-vu" \
-                 "transfer-process-service/transfer-process-service-surf" ;;
+                 "transfer-process-service/transfer-process-service-surf" \
+                 "${NEGOTIATION_SERVICES[@]}" ;;
         dev-user-token) echo "api-gateway/api-gateway" ;;
-        dev-operator-token) echo "orchestrator/orchestrator" ;;
+        dev-operator-token) echo "orchestrator/orchestrator" "${NEGOTIATION_SERVICES[@]}" ;;
     esac
 }
 
@@ -206,6 +214,9 @@ apply_all() {
         "dsp-connector.pub.pem=${STAGE}/dsp-connector.pub.pem"
     apply_secret dsp-connector \
         "dsp-connector.key.pem=$(f dsp-connector.key.pem)"
+    apply_secret negotiation-service \
+        "dsp-connector.pub.pem=${STAGE}/dsp-connector.pub.pem" \
+        "dev-operator-token=$(f dev-operator-token)"
     apply_secret api-gateway \
         "transfer-process-service.pub.pem=${STAGE}/transfer-process-service.pub.pem" \
         "dev-user-token=$(f dev-user-token)"

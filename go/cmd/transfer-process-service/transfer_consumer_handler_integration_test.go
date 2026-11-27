@@ -61,11 +61,18 @@ func decodeTransferInternalError(t *testing.T, rec *httptest.ResponseRecorder) i
 // (providerPid) for sendTransferRequest to adopt the transfer, real HTTP
 // round-trip included (not a mock of sendTransferRequest itself). Mirrors
 // negotiation-service's fakeProvider.
+//
+// It also sets PARTY_DAT for the test and checks that the request carries
+// DYNAMOS's own credential, not the participant identity or a caller's
+// token.
 func fakeTransferProvider(t *testing.T, providerPid string) *httptest.Server {
 	t.Helper()
+	oldDAT := partyDAT
+	partyDAT = "test-party-dat"
+	t.Cleanup(func() { partyDAT = oldDAT })
 	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, "/transfers/request", r.URL.Path)
-		assert.Equal(t, "urn:dynamos:party:VU", r.Header.Get("Authorization"))
+		assert.Equal(t, "Bearer test-party-dat", r.Header.Get("Authorization"))
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(map[string]any{

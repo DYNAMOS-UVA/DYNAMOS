@@ -64,8 +64,9 @@ jobs:
           go run cmd/dsp-connector/tck/seed_tp_negotiation.go
 
       # dsp-connector signs a service token for each internal API call, and
-      # transfer-process-service accepts only these tokens. The key pair
-      # exists only for this run. Same settings as the Helm charts.
+      # transfer-process-service and negotiation-service accept only these
+      # tokens. The key pair exists only for this run. Same settings as the
+      # Helm charts.
       - name: Make internal auth key
         run: |
           mkdir -m 700 "$RUNNER_TEMP/auth"
@@ -78,14 +79,22 @@ jobs:
           AUTH_KEYS: ${{ runner.temp }}/auth
         run: |
           DATA_STEWARD_NAME=VU nohup go run -tags local ./cmd/catalog-service > /tmp/catalog-service.log 2>&1 &
-          DATA_STEWARD_NAME=VU CONSUMER_AUTO_NEGOTIATE=false nohup go run -tags local ./cmd/negotiation-service > /tmp/negotiation-service.log 2>&1 &
+          DATA_STEWARD_NAME=VU CONSUMER_AUTO_NEGOTIATE=false \
+            AUTH_PROVIDERS=jwt \
+            AUTH_JWT_ISSUER=dynamos-dsp-connector \
+            AUTH_JWT_AUDIENCE=negotiation-service \
+            AUTH_JWT_PUBLIC_KEY_FILES="$AUTH_KEYS/dsp-connector.pub.pem" \
+            nohup go run -tags local ./cmd/negotiation-service > /tmp/negotiation-service.log 2>&1 &
           DATA_STEWARD_NAME=VU \
             AUTH_PROVIDERS=jwt \
             AUTH_JWT_ISSUER=dynamos-dsp-connector \
             AUTH_JWT_AUDIENCE=transfer-process-service \
             AUTH_JWT_PUBLIC_KEY_FILES="$AUTH_KEYS/dsp-connector.pub.pem" \
             nohup go run -tags local ./cmd/transfer-process-service > /tmp/transfer-process-service.log 2>&1 &
+          # The TCK starts Consumer-role negotiations (CN_C) through
+          # /negotiations/initiate with its fixture identity.
           DATA_STEWARD_NAME=VU \
+            CONSUMER_INITIATORS='did:web:localhost%3A9999' \
             TOKEN_ISSUER_PROVIDER=jwt \
             TOKEN_ISSUER_JWT_ISSUER=dynamos-dsp-connector \
             TOKEN_ISSUER_JWT_PRIVATE_KEY_FILE="$AUTH_KEYS/dsp-connector.key.pem" \
@@ -130,9 +139,20 @@ jobs:
       # see negotiation-service/main.go's own doc comment on that flag).
       # Safe to run together (#83, confirmed live): disjoint dataset-id
       # namespaces (cn01xx vs cnc01xx).
+      # The auto-responders play the Provider-side operator, so they call
+      # the negotiation-service internal API. In CI they get a token signed
+      # with the run's key; a real deployment gives operators their own
+      # identity provider instead.
       - name: Start TCK auto-responders
         working-directory: go
+        env:
+          AUTH_KEYS: ${{ runner.temp }}/auth
         run: |
+          NEGOTIATION_SERVICE_TOKEN=$(go run ./cmd/authtool token \
+            -key "$AUTH_KEYS/dsp-connector.key.pem" -issuer dynamos-dsp-connector \
+            -sub tck-auto-responder -kind service -aud negotiation-service \
+            -scope negotiation-service:internal -ttl 30m | tail -1)
+          export NEGOTIATION_SERVICE_TOKEN
           nohup go run cmd/dsp-connector/tck/tck_auto_responder.go > /tmp/tck-auto-responder.log 2>&1 &
           nohup go run cmd/dsp-connector/tck/tck_auto_responder_consumer.go > /tmp/tck-auto-responder-consumer.log 2>&1 &
           sleep 3

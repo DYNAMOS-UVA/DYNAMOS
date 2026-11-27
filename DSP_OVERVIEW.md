@@ -136,6 +136,7 @@ Two endpoints stay outside `/api/v1`: `/health` and `/.well-known/dspace-version
 - `POST /api/v1/callback/negotiations/{consumerPid}/events` (for a `FINALIZED` event)
 - `POST /api/v1/callback/negotiations/{consumerPid}/termination`
 - `POST /api/v1/negotiations/initiate` — starts a Consumer-role negotiation. This endpoint is a DYNAMOS addition, not part of the DSP spec.
+  Only the DIDs in `CONSUMER_INITIATORS` (dsp-connector, Helm value `consumerInitiators`) can call it. When the list is empty, the endpoint refuses every caller with `403`.
 
 `dsp-connector` checks negotiation ownership on every Provider-role endpoint except the initiating request. The DAT-verified caller must match the participant who created the negotiation. If the caller does not match, or if the `providerPid` does not exist, `dsp-connector` returns the same `404 not-found` response in both cases. This keeps the two cases indistinguishable, so a caller cannot use the response to find out which IDs are real.
 
@@ -160,7 +161,9 @@ Two endpoints stay outside `/api/v1`: `/health` and `/.well-known/dspace-version
 - `POST /api/v1/callback/transfers/{consumerPid}/suspension`
 - `POST /api/v1/callback/transfers/{consumerPid}/termination`
 - `POST /api/v1/transfers/initiate` — starts a Consumer-role transfer. This endpoint is a DYNAMOS addition, not part of the DSP spec.
-  The caller must be the identity that started the negotiation (the negotiation's `remoteParticipant`). Another caller gets the same answer as for an unknown negotiation.
+  The caller must be in `CONSUMER_INITIATORS` (else `403`), and it must be the identity that started the negotiation (the negotiation's `remoteParticipant`). Another caller gets the same answer as for an unknown negotiation.
+
+**Identity on Consumer-role messages.** A Consumer-role negotiation or transfer stores DYNAMOS's own identity (the verified DID of the initiate caller) as `participant`, never a token. negotiation-service and transfer-process-service refuse a `participant` that looks like a token. On each outbound message to the remote Provider, they send DYNAMOS's own credential: a new STS token when STS is configured, else `PARTY_DAT`, else no `Authorization` header. This is the same rule as for the outbound Provider-role messages. DYNAMOS never forwards a token that a caller sent to it.
 
 **Identity and DAT verification.** Every DSP-facing endpoint requires an `Authorization: Bearer <token>` header. `dsp-connector` reads the `iss` claim from the token. This claim gives a `did:web` identifier. `dsp-connector` resolves this identifier to a public key over HTTP, using the pattern `did:web:{host%3Aport}:{path...}` → `https://{host}:{port}/{path...}/did.json`. `dsp-connector` checks the token's signature against this public key, using the ES256 or EdDSA algorithm.
 
@@ -194,7 +197,7 @@ This signature check proves one fact only: the caller holds the private key that
 
 `negotiation-service` also keeps a second etcd index. This index maps an Agreement's own `@id` field to the `providerPid` of the negotiation that owns it. The DYNAMOS team added this index after testing showed that a real external DSP consumer sends the Agreement's own `@id`, not the `providerPid`, on a Transfer Request.
 
-**Internal API.** `negotiation-service` exposes one endpoint per DSP message type, under the path `/internal/v1/negotiations/...`. A parallel set of endpoints exists under `/internal/v1/negotiations/consumer/...` for the Consumer role. The endpoints are: create, read, counter-request, offer, events (`ACCEPTED` or `FINALIZED`), agreement, agreement verification, and termination.
+**Internal API.** `negotiation-service` exposes one endpoint per DSP message type, under the path `/internal/v1/negotiations/...`. A parallel set of endpoints exists under `/internal/v1/negotiations/consumer/...` for the Consumer role. The endpoints are: create, read, counter-request, offer, events (`ACCEPTED` or `FINALIZED`), agreement, agreement verification, and termination. Each request must have a token with the scope `negotiation-service:internal`: a service token from `dsp-connector`, or an operator token (`$DYNAMOS_OPERATOR_TOKEN` in Tilt). `/health` does not need a token. See `docs/development_guide/Auth/Flows.md`.
 
 **Policy enforcement.** When a negotiation reaches state `FINALIZED`, `negotiation-service` reads the negotiated Agreement and builds a DYNAMOS relation from it:
 
@@ -346,9 +349,9 @@ The job `dsp-tck-validation` has a 12-minute time limit and runs these steps in 
 1. Check out the repository. Set up Go.
 2. Start a standalone etcd container, using the `quay.io/coreos/etcd` image. The three DSP services under test need only a reachable etcd instance, not a full Kubernetes cluster.
 3. Seed etcd with the CI baseline data, the CN test datasets, and the TP fixture negotiation.
-4. Make an Ed25519 key pair for this run. Start `catalog-service`, `negotiation-service` (with `CONSUMER_AUTO_NEGOTIATE=false`), `transfer-process-service`, and `dsp-connector`, using `go run -tags local`. `dsp-connector` gets the private key and signs a service token for each call to `transfer-process-service`. `transfer-process-service` gets the public key and accepts only these tokens. Poll each service's `/health` endpoint until it responds.
+4. Make an Ed25519 key pair for this run. Start `catalog-service`, `negotiation-service` (with `CONSUMER_AUTO_NEGOTIATE=false`), `transfer-process-service`, and `dsp-connector`, using `go run -tags local`. `dsp-connector` gets the private key and signs a service token for each call to `transfer-process-service` and `negotiation-service`. These two services get the public key and accept only these tokens. Poll each service's `/health` endpoint until it responds.
 5. Serve the fixture DID document over HTTP.
-6. Start both auto-responder programs, `tck_auto_responder.go` and `tck_auto_responder_consumer.go`, in the background.
+6. Mint an operator token with the key of the run, and start both auto-responder programs, `tck_auto_responder.go` and `tck_auto_responder_consumer.go`, in the background. They send the token (`NEGOTIATION_SERVICE_TOKEN`) to the `negotiation-service` internal API.
 7. Run the TCK image, filtered to the `dsp-cat,dsp-cn` tags, with a 5-minute time limit. Save the output to a log file.
 8. Run the TCK image a second time, filtered to the `dsp-tp` tag, in the background. Poll the log file for the success line for `TP:03-02`, which normally appears within a few seconds. Stop this container as soon as that line appears, instead of waiting for the other Transfer Process tests to time out. Apply a 90-second safety limit as a backstop.
 9. Stop any leftover TCK containers. This step always runs, even if an earlier step failed.

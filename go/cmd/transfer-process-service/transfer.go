@@ -57,13 +57,12 @@ type TransferProcess struct {
 	ProviderPid string `json:"providerPid"`
 	ConsumerPid string `json:"consumerPid"`
 	Party       string `json:"party"`
-	// Participant holds the requesting participant's identity. This is
-	// dsp-connector's Authorization-header value, captured at creation
-	// time. transfer-process-service never reads this value. It stays
-	// opaque. dsp-connector uses it on every later provider-endpoint call,
-	// to check the caller is the same participant who opened this
-	// transfer. This follows the same convention as negotiation-service's
-	// Negotiation.Participant field.
+	// Participant is an identity (a DID), never a token. On a
+	// Provider-role transfer it is the Consumer that dsp-connector verified;
+	// dsp-connector uses it on every later provider-endpoint call, to check
+	// the caller is the same participant who opened this transfer. On a
+	// Consumer-role transfer it is DYNAMOS's own DID. This follows the same
+	// convention as negotiation-service's Negotiation.Participant field.
 	Participant string `json:"participant"`
 	// RemoteParticipant is only set on a Consumer-role transfer: the
 	// identity of the remote Provider DYNAMOS expects to hear the push

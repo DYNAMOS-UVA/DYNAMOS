@@ -46,6 +46,11 @@ func negotiationConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) 
 		writeNegotiationError(w, http.StatusUnauthorized, "", "", "missing-authorization", "An Authorization header identifying the requesting participant is required.")
 		return
 	}
+	if !mayInitiate(remoteParticipant) {
+		logger.Sugar().Infow("Negotiation initiate denied: participant is not in CONSUMER_INITIATORS", "participant", remoteParticipant)
+		writeNegotiationError(w, http.StatusForbidden, "", "", "forbidden", "This participant may not start negotiations at this connector.")
+		return
+	}
 
 	var body negotiationConsumerInitiateBody
 	if err := decodeConsumerCallbackBody(r, &body); err != nil {
@@ -89,20 +94,13 @@ func negotiationConsumerInitiateHandler(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// ownParticipant is the raw Authorization header this request itself
-	// carried, forwarded as-is - not a synthesized "urn:dynamos:party:X"
-	// label. A real remote Provider DAT-verifies its own inbound
-	// Authorization header (participantFromRequest, see catalog_handler.go);
-	// a synthesized label is not a signed token and can never pass that
-	// check. This is the same "single shared Authorization header for the
-	// whole harness run" convention this handler's own doc comment already
-	// established for remoteParticipant, extended to DYNAMOS's own outbound
-	// assertion: whoever called /negotiations/initiate already presented a
-	// real, verifiable credential, so reuse it rather than fabricate a new
-	// unverifiable one. First surfaced live (issue #93's demo): the CN_C TCK
-	// group never caught this, since DYNAMOS-as-Consumer there talks to the
-	// TCK's own mock Provider, which never DAT-verified this header at all.
-	ownParticipant := r.Header.Get("Authorization")
+	// ownParticipant is DYNAMOS's own identity on this negotiation: the
+	// verified DID of the caller, who is one of CONSUMER_INITIATORS. It is
+	// an identity, never the caller's token. negotiation-service sends its
+	// own credential (PARTY_DAT or STS) on the outbound messages, so the
+	// caller's DAT is not stored and not forwarded. Same "single shared
+	// identity" convention as remoteParticipant above.
+	ownParticipant := remoteParticipant
 	callbackAddress := connectorBaseURL + apiVersion + "/callback"
 
 	n, err := createConsumerNegotiation(body.ConnectorAddress, ownParticipant, remoteParticipant, callbackAddress, offer)

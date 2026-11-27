@@ -86,6 +86,7 @@ func transferInitiateBody() string {
 }
 
 func TestTransferConsumerInitiateHandler_Success(t *testing.T) {
+	allowInitiators(t, transferConsumerFixtureRemote)
 	startFixtureConsumerNegotiationForTransfer(t, "FINALIZED", transferConsumerFixtureEndpoint, transferConsumerFixtureProviderPid)
 	received := startFixtureConsumerTransferCollectionService(t)
 
@@ -104,6 +105,8 @@ func TestTransferConsumerInitiateHandler_Success(t *testing.T) {
 	// agreementId from the stored negotiation itself, so the connector
 	// sends only the negotiation's id.
 	assert.Equal(t, transferConsumerFixtureNegotiationId, (*received)["negotiationId"])
+	// DYNAMOS's own identity is the verified DID, never the caller's token.
+	assert.Equal(t, transferConsumerFixtureRemote, (*received)["participant"])
 	assert.NotContains(t, *received, "providerEndpoint")
 	assert.NotContains(t, *received, "remoteParticipant")
 	assert.NotContains(t, *received, "agreementId")
@@ -115,6 +118,8 @@ func TestTransferConsumerInitiateHandler_Success(t *testing.T) {
 // identity started. The answer is the same as for an unknown negotiation,
 // and transfer-process-service gets no call.
 func TestTransferConsumerInitiateHandler_NotOwner(t *testing.T) {
+	// Both are allowed initiators, so only the ownership check can refuse.
+	allowInitiators(t, transferConsumerFixtureRemote, "did:web:someone-else.example")
 	startFixtureConsumerNegotiationForTransfer(t, "FINALIZED", transferConsumerFixtureEndpoint, transferConsumerFixtureProviderPid)
 	received := startFixtureConsumerTransferCollectionService(t)
 
@@ -145,6 +150,7 @@ func TestTransferConsumerInitiateHandler_MissingAuthorization(t *testing.T) {
 }
 
 func TestTransferConsumerInitiateHandler_MissingFormat(t *testing.T) {
+	allowInitiators(t, transferConsumerFixtureRemote)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate",
 		bytes.NewBufferString(`{"negotiationId":"`+transferConsumerFixtureNegotiationId+`"}`))
 	req.Header.Set("Authorization", testAuthHeader(transferConsumerFixtureRemote))
@@ -159,6 +165,7 @@ func TestTransferConsumerInitiateHandler_MissingFormat(t *testing.T) {
 }
 
 func TestTransferConsumerInitiateHandler_NegotiationNotFinalized(t *testing.T) {
+	allowInitiators(t, transferConsumerFixtureRemote)
 	startFixtureConsumerNegotiationForTransfer(t, "AGREED", transferConsumerFixtureEndpoint, transferConsumerFixtureProviderPid)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate", bytes.NewBufferString(transferInitiateBody()))
@@ -174,6 +181,7 @@ func TestTransferConsumerInitiateHandler_NegotiationNotFinalized(t *testing.T) {
 }
 
 func TestTransferConsumerInitiateHandler_UnknownNegotiation(t *testing.T) {
+	allowInitiators(t, transferConsumerFixtureRemote)
 	startFixtureConsumerNegotiationForTransfer(t, "FINALIZED", transferConsumerFixtureEndpoint, transferConsumerFixtureProviderPid)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate",
@@ -199,6 +207,7 @@ func TestTransferConsumerInitiateHandler_WrongMethod(t *testing.T) {
 }
 
 func TestTransferConsumerInitiateHandler_ProviderRejects(t *testing.T) {
+	allowInitiators(t, transferConsumerFixtureRemote)
 	startFixtureConsumerNegotiationForTransfer(t, "FINALIZED", transferConsumerFixtureEndpoint, transferConsumerFixtureProviderPid)
 
 	mux := http.NewServeMux()
@@ -220,4 +229,25 @@ func TestTransferConsumerInitiateHandler_ProviderRejects(t *testing.T) {
 	var te transferError
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &te))
 	assert.Equal(t, "upstream-error", te.Code)
+}
+
+// TestTransferConsumerInitiateHandler_NotInitiator checks that a valid DAT
+// is not enough: the caller must be in CONSUMER_INITIATORS. The owner of
+// the negotiation is not on the list here.
+func TestTransferConsumerInitiateHandler_NotInitiator(t *testing.T) {
+	allowInitiators(t, "did:web:operator.example")
+	startFixtureConsumerNegotiationForTransfer(t, "FINALIZED", transferConsumerFixtureEndpoint, transferConsumerFixtureProviderPid)
+	received := startFixtureConsumerTransferCollectionService(t)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/transfers/initiate", bytes.NewBufferString(transferInitiateBody()))
+	req.Header.Set("Authorization", testAuthHeader(transferConsumerFixtureRemote))
+	rec := httptest.NewRecorder()
+
+	transferConsumerInitiateHandler(rec, req)
+
+	assert.Equal(t, http.StatusForbidden, rec.Code)
+	var te transferError
+	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &te))
+	assert.Equal(t, "forbidden", te.Code)
+	assert.Nil(t, *received, "transfer-process-service must not be called")
 }

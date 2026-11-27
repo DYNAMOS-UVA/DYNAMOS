@@ -1,7 +1,8 @@
 {{/*
 DYNAMOS auth helpers. The same file is in every chart that runs a service
 with pkg/auth (orchestrator, api-gateway, agents, thirdparty,
-transfer-process-service, dsp-connector). Change all copies together.
+transfer-process-service, dsp-connector, negotiation-service). Change all
+copies together.
 
 Values:
 

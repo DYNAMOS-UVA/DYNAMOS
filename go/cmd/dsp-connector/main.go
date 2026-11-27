@@ -45,6 +45,7 @@ func main() {
 	}
 
 	configureInternalAuth()
+	configureConsumerInitiators()
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/health", healthHandler)

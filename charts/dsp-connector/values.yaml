@@ -14,6 +14,11 @@ transferServiceURL:
   vu: "http://transfer-process-service-vu.transfer-process-service.svc.cluster.local:8080"
   surf: "http://transfer-process-service-surf.transfer-process-service.svc.cluster.local:8080"
 
+# Comma-separated DIDs that may call /negotiations/initiate and
+# /transfers/initiate. These endpoints make DYNAMOS start a negotiation or
+# a transfer under its own identity. Empty: both refuse every caller.
+consumerInitiators: ""
+
 # Authentication (see templates/_auth.tpl and scripts/auth-secrets.sh).
 # Service tokens this connector sends to the internal APIs of the DSP
 # services. transfer-process-service trusts dsp-connector.pub.pem.
