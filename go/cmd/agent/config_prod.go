@@ -18,7 +18,6 @@ var backoffLimit = int32(6)
 var ttl = int32(30)
 var activeDeadlineSeconds = int64(600)
 var kubeconfig = ""
-var rabbitMqUser = "normal_user"
 var etcdJobRootKey = "/agents/jobs"
 var tracingHost = "collector.linkerd-jaeger:55678"
 var queueDeleteAfter = int64(600)

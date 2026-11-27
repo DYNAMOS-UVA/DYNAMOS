@@ -63,7 +63,7 @@ func setupConnection(queueName string, routingKey string, queueAutoDelete bool) 
 
 	conn, channel, _ := getConnectionToRabbitMq()
 
-	err := exchange(channel)
+	err := exchange(conn, channel)
 	if err != nil {
 		logger.Sugar().Fatalw("Failed to create exchange: %v", err)
 		return nil, nil, nil, err
@@ -137,11 +137,23 @@ func declareQueue(name string, channel *amqp.Channel, autoDelete bool) (*amqp.Qu
 	return &queue, nil
 }
 
-// exchange declares a topic exchange on the given channel.
-// It takes a pointer to an amqp.Channel and returns an error if any.
-func exchange(channel *amqp.Channel) error {
+// exchange makes sure the topic exchange exists.
+//
+// It first checks with a passive declare, which needs no permission. The
+// services may not configure the exchange (that would also let them
+// delete it); the broker definitions create it. Only when it does not
+// exist (a local broker without definitions) does it declare it.
+func exchange(conn *amqp.Connection, channel *amqp.Channel) error {
+	// A failed passive declare closes its channel, so use a separate one.
+	if probe, err := conn.Channel(); err == nil {
+		err = probe.ExchangeDeclarePassive(exchangeName, "topic", true, false, false, false, nil)
+		if err == nil {
+			probe.Close()
+			return nil
+		}
+	}
 	if err := channel.ExchangeDeclare(
-		"topic_exchange",
+		exchangeName,
 		"topic",
 		true,  // durable
 		false, // auto delete

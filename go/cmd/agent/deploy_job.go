@@ -145,6 +145,17 @@ func deployJob(ctx context.Context, msChain []mschain.MicroserviceMetadata, jobN
 	return createdJob, nil
 }
 
+// rabbitSecretName is the Secret with the RabbitMQ passwords of this
+// namespace, one key per user (scripts/auth-secrets.sh makes it).
+const rabbitSecretName = "dynamos-rabbitmq"
+
+// jobRabbitUser is the RabbitMQ user of the job sidecars this agent starts.
+// It is separate from the agent's own user: a job can only consume its
+// own job queues and send results back to this agent.
+func jobRabbitUser() string {
+	return "job-" + strings.ToLower(serviceName)
+}
+
 func addSidecar() v1.Container {
 	sidecarName := os.Getenv("SIDECAR_NAME")
 
@@ -169,15 +180,15 @@ func addSidecar() v1.Container {
 		Env: []v1.EnvVar{
 			{Name: "DESIGNATED_GRPC_PORT", Value: strconv.Itoa(firstPortMicroservice - 1)},
 			{Name: "TEMPORARY_JOB", Value: "true"},
-			{Name: "AMQ_USER", Value: rabbitMqUser},
+			{Name: "AMQ_USER", Value: jobRabbitUser()},
 			{Name: "OC_AGENT_HOST", Value: tracingHost},
 			{Name: "AMQ_PASSWORD",
 				ValueFrom: &v1.EnvVarSource{
 					SecretKeyRef: &v1.SecretKeySelector{
 						LocalObjectReference: v1.LocalObjectReference{
-							Name: "rabbit",
+							Name: rabbitSecretName,
 						},
-						Key: "password",
+						Key: jobRabbitUser(),
 					},
 				},
 			}},

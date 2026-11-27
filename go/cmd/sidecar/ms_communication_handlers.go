@@ -75,7 +75,7 @@ func SendDataThroughAMQ(ctx context.Context, data *pb.MicroserviceCommunication,
 	timeoutCtx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 
-	err = s.channel.PublishWithContext(timeoutCtx, exchangeName, data.RequestMetadata.ReturnAddress, true, false, msg)
+	err = s.publish(timeoutCtx, data.RequestMetadata.ReturnAddress, msg)
 	if err != nil {
 		logger.Sugar().Errorf("Error sending microserviceCommunication: %v", err)
 		// return &emptypb.Empty{}, err

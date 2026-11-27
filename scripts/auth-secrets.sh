@@ -7,8 +7,12 @@
 #   scripts/auth-secrets.sh retire NAME    Stop trusting the old key of NAME.
 #   scripts/auth-secrets.sh status         Show the keys and open rotations.
 #
-# NAME is a signing key (orchestrator, transfer-process-service) or a dev
-# token (dev-user-token, dev-operator-token).
+# NAME is a signing key (orchestrator, transfer-process-service), a dev
+# token (dev-user-token, dev-operator-token) or "rabbitmq" (all RabbitMQ
+# passwords).
+#
+# The script also manages one RabbitMQ user per service, with its own
+# password and broker permissions. See scripts/auth-rabbitmq.sh.
 #
 # Environment:
 #   AUTH_KEYS_DIR        key directory (default: <repo>/.dev/auth, git-ignored)
@@ -49,7 +53,7 @@
 # images built with -tags authdev (the Tilt images) accept them. The
 # production images refuse the static-dev provider at startup.
 #
-# Requirements: openssl, kubectl.
+# Requirements: openssl, kubectl. RabbitMQ (core chart) must run.
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -63,6 +67,9 @@ SIGNING_KEYS=(orchestrator transfer-process-service)
 DEV_TOKENS=(dev-user-token dev-operator-token)
 
 die() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
+
+# shellcheck source=scripts/auth-rabbitmq.sh
+source "${REPO_ROOT}/scripts/auth-rabbitmq.sh"
 
 kc() {
     if [[ -n "${KUBE_CONTEXT:-}" ]]; then
@@ -155,8 +162,12 @@ STAGE="$(mktemp -d)"
 trap "rm -rf '${STAGE}'" EXIT
 
 apply_secret() {  # namespace entry...   entry: key=path
-    local ns="$1" args=() names=()
-    shift
+    apply_secret_named "${SECRET}" "$@"
+}
+
+apply_secret_named() {  # secret namespace entry...
+    local secret="$1" ns="$2" args=() names=()
+    shift 2
     for e in "$@"; do
         args+=("--from-file=${e}")
         names+=("${e%%=*}")
@@ -164,9 +175,9 @@ apply_secret() {  # namespace entry...   entry: key=path
     kc get namespace "${ns}" >/dev/null 2>&1 || die "Namespace ${ns} does not exist. Install the namespaces chart first."
     # Server-side apply: kubectl does not copy the data into the
     # last-applied-configuration annotation.
-    kc create secret generic "${SECRET}" -n "${ns}" "${args[@]}" --dry-run=client -o yaml |
+    kc create secret generic "${secret}" -n "${ns}" "${args[@]}" --dry-run=client -o yaml |
         kc apply --server-side --force-conflicts -f - >/dev/null
-    echo "  Secret ${ns}/${SECRET}: ${names[*]}"
+    echo "  Secret ${ns}/${secret}: ${names[*]}"
 }
 
 apply_all() {
@@ -184,6 +195,7 @@ apply_all() {
     apply_secret api-gateway \
         "transfer-process-service.pub.pem=${STAGE}/transfer-process-service.pub.pem" \
         "dev-user-token=$(f dev-user-token)"
+    rmq_apply_secrets
 }
 
 ensure_all() {
@@ -195,6 +207,7 @@ ensure_all() {
     chmod 700 "${KEYS_DIR}"
     for k in "${SIGNING_KEYS[@]}"; do make_key "${k}"; done
     for t in "${DEV_TOKENS[@]}"; do make_token "${t}"; done
+    rmq_ensure_passwords
 }
 
 # restart workload...: restart the Deployments that exist and wait for them.
@@ -225,6 +238,7 @@ restart() {
 cmd_apply() {
     ensure_all
     apply_all
+    rmq_apply_broker
 }
 
 cmd_print() {
@@ -233,12 +247,20 @@ cmd_print() {
     done
     printf 'export DYNAMOS_USER_TOKEN=%q\n' "$(cat "$(f dev-user-token)")"
     printf 'export DYNAMOS_OPERATOR_TOKEN=%q\n' "$(cat "$(f dev-operator-token)")"
+    if [[ -f "$(rmq_pw_file "${RMQ_ADMIN}")" ]]; then
+        printf '# RabbitMQ management UI: user %s\n' "${RMQ_ADMIN}"
+        printf 'export DYNAMOS_RABBITMQ_ADMIN_PASSWORD=%q\n' "$(cat "$(rmq_pw_file "${RMQ_ADMIN}")")"
+    fi
 }
 
 cmd_rotate() {
     local name="${1:-}"
     ensure_all
 
+    if [[ "${name}" == rabbitmq ]]; then
+        rmq_rotate
+        return
+    fi
     if is_dev_token "${name}"; then
         echo "Rotate ${name}"
         new_token "${name}"
@@ -248,7 +270,7 @@ cmd_rotate() {
         echo "Done. Old ${name} is no longer accepted. Show the new one: $0 --print"
         return
     fi
-    is_signing_key "${name}" || die "Unknown key '${name}'. Use one of: ${SIGNING_KEYS[*]} ${DEV_TOKENS[*]}"
+    is_signing_key "${name}" || die "Unknown key '${name}'. Use one of: ${SIGNING_KEYS[*]} ${DEV_TOKENS[*]} rabbitmq"
 
     if [[ -f "$(f "${name}.rotated-at")" ]]; then
         die "The previous rotation of ${name} is not retired. Run: $0 retire ${name}"
@@ -323,6 +345,10 @@ cmd_status() {
         [[ -f "$(f "${k}")" ]] && state="ok" || state="missing (run $0)"
         printf '  %-26s %s\n' "${k}" "${state}"
     done
+    for k in $(rmq_users) "${RMQ_ADMIN}"; do
+        [[ -f "$(rmq_pw_file "${k}")" ]] && state="ok" || state="missing (run $0)"
+        printf '  %-26s %s\n' "rabbitmq/${k}" "${state}"
+    done
 }
 
 case "${1:-}" in
@@ -331,5 +357,5 @@ case "${1:-}" in
     rotate) shift; cmd_rotate "$@" ;;
     retire) shift; cmd_retire "$@" ;;
     status) cmd_status ;;
-    *) sed -n '2,11p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
+    *) sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//'; exit 1 ;;
 esac

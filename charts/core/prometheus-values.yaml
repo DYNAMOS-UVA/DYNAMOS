@@ -41,9 +41,8 @@ extraScrapeConfigs: |
     scrape_interval: 5s
     static_configs:
       - targets: ['rabbitmq.core.svc.cluster.local:15692']
-    basic_auth:
-      username: 'guest'
-      password: 'guest'
+    # The rabbitmq_prometheus endpoint needs no login. (The old guest
+    # login here was not used; scripts/auth-secrets.sh removes guest.)
 
 # server:
 #   podAnnotations:
